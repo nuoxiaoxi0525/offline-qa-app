@@ -17,9 +17,9 @@ version = 1.0.0
 
 # ============================================
 # Python依赖（最小测试集）
-# 不指定Python版本，使用p4a默认版本
+# 指定Python 3.11.9和hostpython3 3.11.9
 # ============================================
-requirements = python3,kivy
+requirements = python3==3.11.9,hostpython3==3.11.9,kivy
 
 # ============================================
 # 安卓配置
@@ -33,6 +33,12 @@ android.archs = arm64-v8a
 android.allow_backup = True
 android.allow_native = True
 android.accept_sdk_license = True
+
+# ============================================
+# p4a配置
+# 使用master分支（支持Python 3.12及以下）
+# ============================================
+p4a.branch = master
 
 # ============================================
 # 构建配置
