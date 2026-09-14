@@ -66,7 +66,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python3 -m pip install --upgrade pip
-          pip3 install buildozer==1.5.0 cython==0.29.36
+          pip3 install --upgrade buildozer cython
           echo "=== Buildozer version ==="
           buildozer --version
 
@@ -75,9 +75,9 @@ jobs:
         with:
           path: |
             ~/.buildozer
-          key: buildozer-v3-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-v4-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-v3-${{ runner.os }}-
+            buildozer-v4-${{ runner.os }}-
 
       - name: Clean old build files
         run: |
