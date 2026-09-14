@@ -18,7 +18,7 @@ version = 1.0.0
 # ============================================
 # Python依赖（核心）
 # ============================================
-requirements = python3,kivy==2.3.0,opencv-python-headless==4.8.1,numpy==1.26.2,pandas==2.1.3,openpyxl==3.1.2,scikit-learn==1.3.2,rapidocr-onnxruntime==1.3.14,onnxruntime==1.16.3,Pillow==10.1.0,plyer==2.1.0
+requirements = python3,kivy,opencv-python-headless,numpy,pandas,openpyxl,scikit-learn,rapidocr-onnxruntime,onnxruntime,Pillow,plyer
 
 # ============================================
 # 安卓配置

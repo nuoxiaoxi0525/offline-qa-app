@@ -75,10 +75,15 @@ jobs:
         with:
           path: |
             ~/.buildozer
-            .buildozer
-          key: buildozer-v2-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-v3-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-v2-${{ runner.os }}-
+            buildozer-v3-${{ runner.os }}-
+
+      - name: Clean old build files
+        run: |
+          echo "=== Cleaning old build files ==="
+          rm -rf .buildozer bin build.log
+          echo "=== Clean done ==="
 
       - name: Build APK
         id: build
