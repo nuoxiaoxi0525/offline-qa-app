@@ -2,7 +2,7 @@
 
 # ============================================
 # 离线搜题宝 - Buildozer APK打包配置
-# 第2步：添加基本功能依赖
+# 第3步：添加OCR识别依赖
 # ============================================
 
 # 应用基本信息
@@ -10,16 +10,16 @@ title = 离线搜题宝
 package.name = offlineqa
 package.domain = org.offlineqa
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,json,txt
+source.include_exts = py,png,jpg,kv,atlas,json,txt,onnx
 
 # 版本
 version = 1.0.0
 
 # ============================================
 # Python依赖
-# 第2步：添加numpy, Pillow, plyer
+# 第3步：添加OCR识别依赖
 # ============================================
-requirements = python3==3.11.9,hostpython3==3.11.9,kivy,numpy,Pillow,plyer
+requirements = python3==3.11.9,hostpython3==3.11.9,kivy,numpy,Pillow,plyer,onnxruntime,rapidocr-onnxruntime
 
 # ============================================
 # 安卓配置
