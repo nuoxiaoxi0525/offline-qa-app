@@ -16,7 +16,7 @@ source.include_exts = py,png,jpg,kv,atlas,json,txt,onnx,xml
 version = 1.0.0
 
 # ============================================
-# Python依赖（核心）
+# Python依赖（最小测试集 - 先验证基础打包）
 # ============================================
 requirements = python3,kivy,numpy,Pillow,plyer
 
@@ -58,8 +58,9 @@ bin_dir = bin
 
 # ============================================
 # 安卓NDK和SDK配置（指定稳定版本）
+# GitHub Actions环境使用预安装的SDK
 # ============================================
-# android.sdk_path = 
+android.sdk_path = /usr/local/lib/android/sdk
 # android.ndk_path = 
 android.ndk_version = 25b
 android.build_tools_version = 33.0.2

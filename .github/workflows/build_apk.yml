@@ -9,6 +9,9 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 180
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -70,14 +73,30 @@ jobs:
           echo "=== Buildozer version ==="
           buildozer --version
 
+      - name: Setup Android SDK (use pre-installed SDK)
+        run: |
+          echo "=== ANDROID_HOME ==="
+          echo $ANDROID_HOME
+          echo "=== SDK contents ==="
+          ls -la $ANDROID_HOME || echo "SDK not found"
+          echo "=== Installed platforms ==="
+          ls -la $ANDROID_HOME/platforms/ 2>/dev/null || echo "No platforms"
+          echo "=== Installed build-tools ==="
+          ls -la $ANDROID_HOME/build-tools/ 2>/dev/null || echo "No build-tools"
+          echo "=== sdkmanager path ==="
+          which sdkmanager || echo "sdkmanager not in PATH"
+          echo "=== Accepting licenses and installing required SDK components ==="
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.2" || echo "sdkmanager install failed, will try buildozer fallback"
+
       - name: Cache Buildozer
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer
-          key: buildozer-v6-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-v7-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-v5-${{ runner.os }}-
+            buildozer-v6-${{ runner.os }}-
 
       - name: Clean old build files
         run: |
@@ -135,6 +154,7 @@ jobs:
           python3 --version
           echo "Buildozer version:"
           buildozer --version
+          echo "ANDROID_HOME: $ANDROID_HOME"
 
           # 执行buildozer打包，不使用管道避免掩盖错误
           buildozer android debug 2>&1 | tee build.log
