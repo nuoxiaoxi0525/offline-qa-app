@@ -106,8 +106,10 @@ jobs:
           echo "=== Buildozer exit code: $BUILD_EXIT_CODE ==="
 
           if [ $BUILD_EXIT_CODE -ne 0 ]; then
-            echo "=== BUILD FAILED! Last 100 lines of log ==="
-            tail -100 build.log
+            echo "=== BUILD FAILED! Last 300 lines of log ==="
+            tail -300 build.log
+            echo "=== Searching for errors ==="
+            grep -i -E "error|failed|exception|traceback|fatal" build.log | tail -50 || echo "No error keywords found"
             exit $BUILD_EXIT_CODE
           fi
 
