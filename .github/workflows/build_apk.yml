@@ -12,8 +12,6 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-      PIP_NO_BINARY: ":all:"
-      PIP_ONLY_BINARY: ""
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -71,9 +69,11 @@ jobs:
       - name: Install Python dependencies
         run: |
           python3 -m pip install --upgrade pip
-          pip3 install --upgrade buildozer cython
+          pip3 install buildozer==1.5.0 cython==0.29.36
           echo "=== Buildozer version ==="
           buildozer --version
+          echo "=== Cython version ==="
+          cython --version
 
       - name: Setup Android SDK (use pre-installed SDK)
         run: |
