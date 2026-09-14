@@ -12,6 +12,8 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      PIP_NO_BINARY: ":all:"
+      PIP_ONLY_BINARY: ""
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
