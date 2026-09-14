@@ -75,7 +75,7 @@ jobs:
         with:
           path: |
             ~/.buildozer
-          key: buildozer-v4-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-v5-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
             buildozer-v4-${{ runner.os }}-
 
@@ -106,10 +106,24 @@ jobs:
           echo "=== Buildozer exit code: $BUILD_EXIT_CODE ==="
 
           if [ $BUILD_EXIT_CODE -ne 0 ]; then
-            echo "=== BUILD FAILED! Last 300 lines of log ==="
-            tail -300 build.log
-            echo "=== Searching for errors ==="
-            grep -i -E "error|failed|exception|traceback|fatal" build.log | tail -50 || echo "No error keywords found"
+            echo "=== BUILD FAILED! Total log lines: $(wc -l < build.log) ==="
+            echo "=== Last 200 lines of log ==="
+            tail -200 build.log
+            echo ""
+            echo "=== Searching for error keywords with context ==="
+            grep -n -i -E "error|failed|exception|traceback|fatal|cannot|unable|not found|permission" build.log | tail -30 || echo "No error keywords found"
+            echo ""
+            echo "=== Lines around 'Buildozer failed' ==="
+            grep -n "Buildozer failed" build.log | head -5
+            FAILED_LINE=$(grep -n "Buildozer failed" build.log | head -1 | cut -d: -f1)
+            if [ -n "$FAILED_LINE" ] && [ "$FAILED_LINE" -gt 100 ]; then
+              START_LINE=$((FAILED_LINE - 100))
+              echo "=== Lines $START_LINE to $FAILED_LINE ==="
+              sed -n "${START_LINE},${FAILED_LINE}p" build.log
+            fi
+            echo ""
+            echo "=== First 100 lines (build start) ==="
+            head -100 build.log
             exit $BUILD_EXIT_CODE
           fi
 

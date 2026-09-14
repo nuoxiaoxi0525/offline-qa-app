@@ -28,7 +28,7 @@ fullscreen = 0
 android.permissions = CAMERA,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,INTERNET,ACCESS_NETWORK_STATE
 android.api = 33
 android.minapi = 24
-android.archs = arm64-v8a,armeabi-v7a
+android.archs = arm64-v8a
 android.allow_backup = True
 android.allow_native = True
 android.accept_sdk_license = True
@@ -57,12 +57,12 @@ build_dir = .buildozer
 bin_dir = bin
 
 # ============================================
-# 安卓NDK和SDK配置（自动下载）
+# 安卓NDK和SDK配置（指定稳定版本）
 # ============================================
 # android.sdk_path = 
 # android.ndk_path = 
-# android.ndk_version = 25b
-# android.build_tools_version = 33.0.2
+android.ndk_version = 25b
+android.build_tools_version = 33.0.2
 
 # ============================================
 # 高级配置
