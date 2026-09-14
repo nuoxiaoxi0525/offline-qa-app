@@ -2,7 +2,7 @@
 
 # ============================================
 # 离线搜题宝 - Buildozer APK打包配置
-# 最小测试版本 - 验证基础打包
+# 第2步：添加基本功能依赖
 # ============================================
 
 # 应用基本信息
@@ -16,10 +16,10 @@ source.include_exts = py,png,jpg,kv,atlas,json,txt
 version = 1.0.0
 
 # ============================================
-# Python依赖（最小测试集）
-# 指定Python 3.11.9和hostpython3 3.11.9
+# Python依赖
+# 第2步：添加numpy, Pillow, plyer
 # ============================================
-requirements = python3==3.11.9,hostpython3==3.11.9,kivy
+requirements = python3==3.11.9,hostpython3==3.11.9,kivy,numpy,Pillow,plyer
 
 # ============================================
 # 安卓配置
