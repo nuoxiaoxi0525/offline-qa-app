@@ -1,0 +1,31 @@
+# ============================================
+# 离线搜题宝 - Python依赖清单
+# Buildozer APK版本 - RapidOCR (PP-OCRv4)
+# ============================================
+
+# 核心UI框架
+kivy==2.3.0
+plyer==2.1.0
+
+# 图像处理
+opencv-python-headless==4.8.1.78
+Pillow==10.1.0
+numpy==1.26.2
+
+# OCR引擎（RapidOCR - PP-OCRv4，中文识别率97%+）
+rapidocr-onnxruntime==1.3.14
+onnxruntime==1.16.3
+
+# 数据处理
+pandas==2.1.3
+openpyxl==3.1.2
+
+# 机器学习（TF-IDF搜题匹配）
+scikit-learn==1.3.2
+
+# ============================================
+# 打包工具（仅Linux/WSL2环境需要）
+# ============================================
+# buildozer==1.5.0
+# cython==0.29.36
+# python-for-android==2023.9.16
