@@ -75,15 +75,52 @@ jobs:
         with:
           path: |
             ~/.buildozer
-          key: buildozer-v5-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-v6-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-v4-${{ runner.os }}-
+            buildozer-v5-${{ runner.os }}-
 
       - name: Clean old build files
         run: |
           echo "=== Cleaning old build files ==="
-          rm -rf .buildozer bin build.log
+          # Keep .buildozer to allow cache reuse; remove only build outputs and logs
+          rm -rf bin build.log
           echo "=== Clean done ==="
+
+      - name: Ensure Android NDK (r28c) is present (cached)
+        run: |
+          set -euo pipefail
+          NDK_DIR="$HOME/.buildozer/android/platform/android-ndk-r28c"
+          if [ -d "$NDK_DIR" ]; then
+            echo "NDK already present: $NDK_DIR"
+          else
+            echo "NDK not present. Downloading android-ndk-r28c..."
+            mkdir -p "$(dirname "$NDK_DIR")"
+            URL="https://dl.google.com/android/repository/android-ndk-r28c-linux.zip"
+            TMPDIR="$(mktemp -d)"
+            RETRIES=5
+            SUCCESS=0
+            for i in $(seq 1 $RETRIES); do
+              echo "Attempt $i of $RETRIES to download NDK..."
+              if curl -fSL --retry 3 --retry-delay 10 "$URL" -o "$TMPDIR/ndk.zip"; then
+                SUCCESS=1
+                break
+              else
+                echo "NDK download attempt $i failed; sleeping before retry"
+                sleep $((i * 10))
+              fi
+            done
+            if [ "$SUCCESS" -ne 1 ]; then
+              echo "NDK download failed after $RETRIES attempts" >&2
+              exit 1
+            fi
+            echo "Extracting NDK..."
+            unzip -q "$TMPDIR/ndk.zip" -d "$TMPDIR"
+            mv "$TMPDIR/android-ndk-r28c" "$NDK_DIR"
+            rm -rf "$TMPDIR"
+            echo "NDK installed to $NDK_DIR"
+          fi
+          echo "=== NDK version ==="
+          cat "$NDK_DIR/source.properties" 2>/dev/null || echo "Could not read NDK version"
 
       - name: Build APK
         id: build
