@@ -2,7 +2,7 @@
 
 # ============================================
 # 离线搜题宝 - Buildozer APK打包配置
-# 第4步：添加搜题功能依赖
+# 第4步修正：移除scikit-learn，用纯Python实现TF-IDF
 # ============================================
 
 # 应用基本信息
@@ -17,9 +17,10 @@ version = 1.0.0
 
 # ============================================
 # Python依赖
-# 第4步：添加搜题功能依赖
+# 第4步修正：移除scikit-learn，只保留pandas
+# 用纯Python实现TF-IDF和语义相似度匹配
 # ============================================
-requirements = python3==3.11.9,hostpython3==3.11.9,kivy,numpy,Pillow,plyer,onnxruntime,rapidocr-onnxruntime,pandas,scikit-learn
+requirements = python3==3.11.9,hostpython3==3.11.9,kivy,numpy,Pillow,plyer,onnxruntime,rapidocr-onnxruntime,pandas
 
 # ============================================
 # 安卓配置
