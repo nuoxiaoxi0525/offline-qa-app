@@ -2,9 +2,13 @@
 """
 离线搜题宝 - 完整功能版本
 支持：拍照OCR识别 + 本地题库导入 + 离线语义搜题
+添加错误处理，防止闪退
 """
 import os
+import sys
+import traceback
 import threading
+
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
@@ -13,13 +17,24 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.clock import Clock
 from kivy.core.window import Window
-from kivy.graphics import Color, Rectangle
 
-from config import UI, PHOTO_DIR
-from ocr_engine import get_ocr_engine
-from question_bank import get_question_bank
-from search_engine import get_search_engine
-from importer import get_importer
+from config import UI, BASE_DIR
+
+
+# 全局错误处理
+def excepthook(exc_type, exc_value, exc_traceback):
+    """全局异常处理，防止闪退"""
+    error_msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    print(f"未捕获异常: {error_msg}")
+    # 写入错误日志
+    try:
+        log_path = os.path.join(BASE_DIR, "error.log")
+        with open(log_path, 'w', encoding='utf-8') as f:
+            f.write(error_msg)
+    except:
+        pass
+
+sys.excepthook = excepthook
 
 
 class OfflineQALayout(BoxLayout):
@@ -31,11 +46,12 @@ class OfflineQALayout(BoxLayout):
         self.padding = 10
         self.spacing = 10
 
-        # 初始化组件
-        self.ocr_engine = None
+        # 后台组件（延迟初始化）
         self.question_bank = None
         self.search_engine = None
         self.importer = None
+        self.ocr_engine = None
+        self._initialized = False
 
         # 构建UI
         self._build_ui()
@@ -58,7 +74,7 @@ class OfflineQALayout(BoxLayout):
 
         # 状态显示
         self.status_label = Label(
-            text='准备就绪',
+            text='正在初始化...',
             font_size='14sp',
             size_hint_y=0.05,
             color=[0.5, 0.5, 0.5, 1]
@@ -142,7 +158,7 @@ class OfflineQALayout(BoxLayout):
         self.result_layout.bind(minimum_height=self.result_layout.setter('height'))
 
         self.result_label = Label(
-            text='搜索结果将在这里显示...',
+            text='搜索结果将在这里显示...\n\n欢迎使用离线搜题宝！',
             font_size='14sp',
             size_hint_y=None,
             height=100,
@@ -155,47 +171,83 @@ class OfflineQALayout(BoxLayout):
         self.add_widget(self.result_scroll)
 
     def _init_background(self, dt):
-        """异步初始化后台组件"""
+        """异步初始化后台组件（带错误处理）"""
         def init_thread():
             try:
-                self.status_label.text = '正在初始化题库...'
-                self.question_bank = get_question_bank()
+                self._set_status('正在初始化题库...')
 
-                self.status_label.text = '正在初始化搜题引擎...'
-                self.search_engine = get_search_engine()
+                # 初始化题库数据库
+                try:
+                    from question_bank import get_question_bank
+                    self.question_bank = get_question_bank()
+                except Exception as e:
+                    self._set_status(f'题库初始化失败: {str(e)[:30]}')
+                    print(f'题库初始化失败: {e}')
+
+                # 初始化搜题引擎
+                try:
+                    from search_engine import get_search_engine
+                    self.search_engine = get_search_engine()
+                except Exception as e:
+                    self._set_status(f'搜题引擎初始化失败: {str(e)[:30]}')
+                    print(f'搜题引擎初始化失败: {e}')
 
                 # 检查题库是否为空
-                stats = self.question_bank.get_statistics()
-                if stats['total'] > 0:
-                    self.status_label.text = '正在构建搜索索引...'
-                    self.search_engine.build_index()
+                if self.question_bank:
+                    try:
+                        stats = self.question_bank.get_statistics()
+                        if stats['total'] > 0:
+                            self._set_status('正在构建搜索索引...')
+                            if self.search_engine:
+                                self.search_engine.build_index()
+                    except Exception as e:
+                        print(f'统计或索引构建失败: {e}')
 
-                self.importer = get_importer()
+                # 初始化导入器
+                try:
+                    from importer import get_importer
+                    self.importer = get_importer()
+                except Exception as e:
+                    print(f'导入器初始化失败: {e}')
 
                 # 更新统计
                 Clock.schedule_once(lambda dt: self._update_stats(), 0)
-                self.status_label.text = '准备就绪'
+                self._set_status('准备就绪')
+                self._initialized = True
 
             except Exception as e:
-                self.status_label.text = f'初始化失败: {str(e)[:50]}'
+                error_msg = f'初始化失败: {str(e)[:50]}'
+                self._set_status(error_msg)
+                print(f'初始化线程异常: {e}')
+                traceback.print_exc()
 
         threading.Thread(target=init_thread, daemon=True).start()
+
+    def _set_status(self, text):
+        """在主线程更新状态"""
+        Clock.schedule_once(lambda dt: setattr(self.status_label, 'text', text), 0)
 
     def _update_stats(self):
         """更新题库统计"""
         if self.question_bank:
-            stats = self.question_bank.get_statistics()
-            self.stats_label.text = f'题库: {stats["total"]}道题'
+            try:
+                stats = self.question_bank.get_statistics()
+                self.stats_label.text = f'题库: {stats["total"]}道题'
+            except Exception as e:
+                print(f'获取统计失败: {e}')
 
     def on_camera_click(self, instance):
         """拍照搜题按钮点击"""
-        self.status_label.text = '正在打开相机...'
-        # TODO: 实现拍照功能
-        # 由于Kivy相机在Android上的复杂性，这里先提供手动输入
+        self.status_label.text = '拍照功能说明：'
         self.result_label.text = (
-            '📷 拍照功能说明：\n\n'
-            '在完整APK版本中，点击此按钮将打开系统相机。\n\n'
-            '当前测试版本请使用下方手动输入题目文字进行搜题测试。'
+            '📷 拍照搜题功能说明：\n\n'
+            '拍照搜题需要OCR模型文件支持。\n'
+            '首次使用时会自动下载模型文件。\n\n'
+            '如果OCR模型下载失败，请：\n'
+            '1. 确保手机已连接网络\n'
+            '2. 重新打开APP\n'
+            '3. 等待模型下载完成\n\n'
+            '或者，您可以先使用下方的手动输入功能进行搜题测试。'
         )
         self.status_label.text = '请手动输入题目文字'
 
@@ -210,7 +262,8 @@ class OfflineQALayout(BoxLayout):
             '示例：\n'
             '单选题 | 根据安全生产法... | A.xxx|B.xxx|C.xxx|D.xxx | D | 解析内容...\n\n'
             '请将Excel文件放到手机存储中，\n'
-            '然后通过文件选择器导入。'
+            '然后通过文件选择器导入。\n\n'
+            '（文件选择功能开发中，当前版本请先使用手动搜题）'
         )
         self.status_label.text = '导入功能开发中'
 
@@ -219,6 +272,10 @@ class OfflineQALayout(BoxLayout):
         query_text = self.question_input.text.strip()
         if not query_text:
             self.result_label.text = '请输入题目文字后再搜索'
+            return
+
+        if not self.search_engine:
+            self.result_label.text = '搜题引擎未初始化，请稍后再试'
             return
 
         self.status_label.text = '正在搜索...'
@@ -306,4 +363,8 @@ class OfflineQAApp(App):
 
 
 if __name__ == '__main__':
-    OfflineQAApp().run()
+    try:
+        OfflineQAApp().run()
+    except Exception as e:
+        print(f'APP运行错误: {e}')
+        traceback.print_exc()
