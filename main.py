@@ -17,6 +17,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.clock import Clock
 from kivy.core.window import Window
+from kivy.core.text import LabelBase
 
 from config import UI, BASE_DIR
 
@@ -35,6 +36,47 @@ def excepthook(exc_type, exc_value, exc_traceback):
         pass
 
 sys.excepthook = excepthook
+
+
+# 注册中文字体
+def register_chinese_font():
+    """注册支持中文的字体"""
+    try:
+        # 尝试Android系统字体
+        android_fonts = [
+            '/system/fonts/DroidSansFallback.ttf',
+            '/system/fonts/NotoSansCJK-Regular.ttc',
+            '/system/fonts/NotoSansSC-Regular.ttf',
+            '/system/fonts/Roboto-Regular.ttf',
+        ]
+
+        for font_path in android_fonts:
+            if os.path.exists(font_path):
+                try:
+                    LabelBase.register(name='ChineseFont', fn_regular=font_path)
+                    print(f"使用系统字体: {font_path}")
+                    return True
+                except Exception as e:
+                    print(f"注册字体失败 {font_path}: {e}")
+                    continue
+
+        # 如果系统字体都找不到，尝试打包的字体
+        bundled_font = os.path.join(BASE_DIR, 'fonts', 'NotoSansSC-Regular.ttf')
+        if os.path.exists(bundled_font):
+            LabelBase.register(name='ChineseFont', fn_regular=bundled_font)
+            print(f"使用打包字体: {bundled_font}")
+            return True
+
+        print("未找到支持中文的字体，使用默认字体")
+        return False
+
+    except Exception as e:
+        print(f"字体注册失败: {e}")
+        return False
+
+
+# 启动时注册字体
+FONT_AVAILABLE = register_chinese_font()
 
 
 class OfflineQALayout(BoxLayout):
@@ -358,6 +400,11 @@ class OfflineQAApp(App):
     def build(self):
         # 设置窗口背景
         Window.clearcolor = UI['bg_color']
+
+        # 设置默认字体为中文字体
+        if FONT_AVAILABLE:
+            from kivy.config import Config
+            Config.set('kivy', 'default_font', ['ChineseFont', 'ChineseFont.ttf'])
 
         return OfflineQALayout()
 
