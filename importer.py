@@ -2,9 +2,11 @@
 """
 题库导入模块 - 支持Excel/CSV格式导入
 兼容刷刷题APP的导入格式：题型、题目、选项、答案、解析
+使用openpyxl读取Excel（不依赖pandas）
 """
 import os
 import re
+import csv
 from config import IMPORT, EXPORT_DIR
 from question_bank import get_question_bank
 from search_engine import get_search_engine
@@ -63,37 +65,21 @@ class QuestionImporter:
         return success_count, fail_count, ""
 
     def _parse_excel(self, file_path):
-        """解析Excel文件"""
-        try:
-            import pandas as pd
-        except ImportError:
-            raise RuntimeError("需要安装pandas和openpyxl: pip install pandas openpyxl")
+        """解析Excel文件（使用openpyxl，不依赖pandas）"""
+        from openpyxl import load_workbook
 
-        df = pd.read_excel(file_path)
-        return self._parse_dataframe(df)
+        wb = load_workbook(filename=file_path, read_only=True)
+        ws = wb.active
 
-    def _parse_csv(self, file_path):
-        """解析CSV文件"""
-        try:
-            import pandas as pd
-        except ImportError:
-            raise RuntimeError("需要安装pandas: pip install pandas")
+        # 读取所有行
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            return []
 
-        # 尝试多种编码
-        for encoding in ['utf-8', 'gbk', 'gb2312', 'utf-8-sig']:
-            try:
-                df = pd.read_csv(file_path, encoding=encoding)
-                break
-            except UnicodeDecodeError:
-                continue
-        else:
-            raise RuntimeError("无法识别CSV文件编码")
+        # 第一行是表头
+        headers = [str(h).strip() if h else '' for h in rows[0]]
+        data_rows = rows[1:]
 
-        return self._parse_dataframe(df)
-
-    def _parse_dataframe(self, df):
-        """将DataFrame解析为题目列表"""
-        import pandas as pd
         # 列名映射（支持中英文）
         column_mapping = {
             '题型': 'question_type',
@@ -115,16 +101,21 @@ class QuestionImporter:
             'source': 'source',
         }
 
-        # 标准化列名
-        df.columns = [str(col).strip() for col in df.columns]
+        # 建立列索引映射
+        col_index = {}
+        for idx, header in enumerate(headers):
+            for col_name, field_name in column_mapping.items():
+                if header == col_name:
+                    col_index[field_name] = idx
+                    break
 
         questions = []
-        for _, row in df.iterrows():
+        for row in data_rows:
             q = {}
-            for col_name, field_name in column_mapping.items():
-                if col_name in df.columns:
-                    value = row[col_name]
-                    if pd.notna(value):
+            for field_name, idx in col_index.items():
+                if idx < len(row):
+                    value = row[idx]
+                    if value is not None and str(value).strip():
                         q[field_name] = str(value).strip()
 
             # 验证必填字段
@@ -142,6 +133,71 @@ class QuestionImporter:
 
             questions.append(q)
 
+        wb.close()
+        return questions
+
+    def _parse_csv(self, file_path):
+        """解析CSV文件"""
+        # 尝试多种编码
+        for encoding in ['utf-8', 'gbk', 'gb2312', 'utf-8-sig']:
+            try:
+                questions = self._parse_csv_with_encoding(file_path, encoding)
+                if questions:
+                    return questions
+            except UnicodeDecodeError:
+                continue
+        else:
+            raise RuntimeError("无法识别CSV文件编码")
+
+    def _parse_csv_with_encoding(self, file_path, encoding):
+        """用指定编码解析CSV"""
+        questions = []
+
+        with open(file_path, 'r', encoding=encoding) as f:
+            reader = csv.DictReader(f)
+
+            # 列名映射
+            column_mapping = {
+                '题型': 'question_type',
+                'type': 'question_type',
+                '题目': 'question_text',
+                '题干': 'question_text',
+                'question': 'question_text',
+                '选项': 'options',
+                'options': 'options',
+                '答案': 'answer',
+                'answer': 'answer',
+                '解析': 'analysis',
+                'analysis': 'analysis',
+                '科目': 'subject',
+                'subject': 'subject',
+                '年份': 'year',
+                'year': 'year',
+                '来源': 'source',
+                'source': 'source',
+            }
+
+            for row in reader:
+                q = {}
+                for col_name, field_name in column_mapping.items():
+                    if col_name in row and row[col_name]:
+                        q[field_name] = str(row[col_name]).strip()
+
+                # 验证必填字段
+                if 'question_text' not in q or not q['question_text']:
+                    continue
+                if 'answer' not in q or not q['answer']:
+                    continue
+
+                # 清理答案
+                q['answer'] = self._clean_answer(q['answer'])
+
+                # 默认题型
+                if 'question_type' not in q or not q['question_type']:
+                    q['question_type'] = '单选题' if len(q['answer']) == 1 else '多选题'
+
+                questions.append(q)
+
         return questions
 
     def _clean_answer(self, answer):
@@ -155,34 +211,40 @@ class QuestionImporter:
         """
         导出题库导入模板
         """
-        try:
-            import pandas as pd
-        except ImportError:
-            raise RuntimeError("需要安装pandas和openpyxl")
+        from openpyxl import Workbook
 
         if output_path is None:
             output_path = os.path.join(EXPORT_DIR, "题库导入模板.xlsx")
 
-        # 模板数据
-        template_data = [
-            {
-                '题型': '单选题',
-                '题目': '根据《安全生产法》，生产经营单位的主要负责人对本单位安全生产工作负有的职责不包括（）',
-                '选项': 'A.建立健全并落实本单位全员安全生产责任制|B.组织制定并实施本单位安全生产规章制度和操作规程|C.组织制定并实施本单位安全生产教育和培训计划|D.直接负责本单位的日常安全检查工作',
-                '答案': 'D',
-                '解析': '根据《安全生产法》第二十一条，主要负责人职责包括ABC选项，D选项属于安全生产管理人员职责。',
-            },
-            {
-                '题型': '多选题',
-                '题目': '下列属于从业人员安全生产权利的有（）',
-                '选项': 'A.知情权|B.建议权|C.批评检举控告权|D.拒绝违章指挥权',
-                '答案': 'ABCD',
-                '解析': '根据《安全生产法》，从业人员享有知情权、建议权、批评检举控告权、拒绝违章指挥权、紧急避险权等。',
-            },
-        ]
+        # 创建工作簿
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "题库模板"
 
-        df = pd.DataFrame(template_data, columns=['题型', '题目', '选项', '答案', '解析'])
-        df.to_excel(output_path, index=False)
+        # 写入表头
+        headers = ['题型', '题目', '选项', '答案', '解析']
+        ws.append(headers)
+
+        # 写入示例数据
+        ws.append([
+            '单选题',
+            '根据《安全生产法》，生产经营单位的主要负责人对本单位安全生产工作负有的职责不包括（）',
+            'A.建立健全并落实本单位全员安全生产责任制|B.组织制定并实施本单位安全生产规章制度和操作规程|C.组织制定并实施本单位安全生产教育和培训计划|D.直接负责本单位的日常安全检查工作',
+            'D',
+            '根据《安全生产法》第二十一条，主要负责人职责包括ABC选项，D选项属于安全生产管理人员职责。',
+        ])
+
+        ws.append([
+            '多选题',
+            '下列属于从业人员安全生产权利的有（）',
+            'A.知情权|B.建议权|C.批评检举控告权|D.拒绝违章指挥权',
+            'ABCD',
+            '根据《安全生产法》，从业人员享有知情权、建议权、批评检举控告权、拒绝违章指挥权、紧急避险权等。',
+        ])
+
+        # 保存
+        wb.save(output_path)
+        wb.close()
         return output_path
 
 
