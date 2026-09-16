@@ -133,7 +133,21 @@ class FileChooserPopup(Popup):
         layout.add_widget(btn_layout)
         self.content = layout
 
+        # 默认从Download目录开始
+        default_paths = [
+            '/sdcard/Download/',
+            '/sdcard/Downloads/',
+            '/sdcard/',
+            '/storage/emulated/0/Download/',
+            '/storage/emulated/0/',
+        ]
+        
         self.current_path = '/sdcard/'
+        for p in default_paths:
+            if os.path.exists(p):
+                self.current_path = p
+                break
+        
         self.load_dir(self.current_path)
 
     def load_dir(self, path):
@@ -155,9 +169,7 @@ class FileChooserPopup(Popup):
             if os.path.isdir(full_path):
                 dirs.append(item)
             else:
-                ext = os.path.splitext(item)[1].lower()
-                if ext in ['.xlsx', '.xls', '.csv']:
-                    files.append(item)
+                files.append(item)
 
         # 添加目录
         for d in sorted(dirs):
@@ -173,15 +185,30 @@ class FileChooserPopup(Popup):
             btn.bind(on_press=lambda x, p=os.path.join(path, d): self.load_dir(p))
             self.file_list.add_widget(btn)
 
-        # 添加文件
+        # 添加文件（显示所有文件，不只是Excel）
         for f in sorted(files):
+            # 根据文件类型显示不同图标
+            ext = os.path.splitext(f)[1].lower()
+            if ext in ['.xlsx', '.xls', '.csv']:
+                icon = '📊'
+                bg_color = [0.9, 0.95, 0.9, 1]
+            elif ext in ['.pdf']:
+                icon = '📕'
+                bg_color = [0.95, 0.9, 0.9, 1]
+            elif ext in ['.txt', '.doc', '.docx']:
+                icon = '📄'
+                bg_color = [0.95, 0.95, 0.9, 1]
+            else:
+                icon = '📄'
+                bg_color = [0.9, 0.9, 0.9, 1]
+            
             btn = Button(
-                text=f'📄 {f}',
+                text=f'{icon} {f}',
                 size_hint_y=None,
                 height=40,
                 halign='left',
                 font_name='ChineseFont',
-                background_color=[0.9, 0.95, 0.9, 1],
+                background_color=bg_color,
                 background_normal='',
             )
             btn.bind(on_press=lambda x, p=os.path.join(path, f): self.select_file(p))
