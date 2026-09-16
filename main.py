@@ -42,23 +42,28 @@ sys.excepthook = excepthook
 def register_chinese_font():
     """注册支持中文的字体"""
     try:
-        # 获取当前脚本所在目录（APK打包的资源目录）
+        # 打印当前工作目录
+        print(f"当前工作目录: {os.getcwd()}")
+        print(f"__file__: {__file__}")
+
+        # 尝试多个可能的字体路径
+        possible_paths = []
+
+        # 1. 脚本所在目录
         script_dir = os.path.dirname(os.path.abspath(__file__))
+        possible_paths.append(os.path.join(script_dir, 'fonts', 'NotoSansSC-Regular.ttf'))
+        possible_paths.append(os.path.join(script_dir, 'NotoSansSC-Regular.ttf'))
 
-        # 优先使用打包的字体
-        bundled_font = os.path.join(script_dir, 'fonts', 'NotoSansSC-Regular.ttf')
-        print(f"查找打包字体: {bundled_font}")
-        print(f"文件存在: {os.path.exists(bundled_font)}")
+        # 2. 当前工作目录
+        cwd = os.getcwd()
+        possible_paths.append(os.path.join(cwd, 'fonts', 'NotoSansSC-Regular.ttf'))
+        possible_paths.append(os.path.join(cwd, 'NotoSansSC-Regular.ttf'))
 
-        if os.path.exists(bundled_font):
-            try:
-                LabelBase.register(name='ChineseFont', fn_regular=bundled_font)
-                print(f"成功注册打包字体: {bundled_font}")
-                return True
-            except Exception as e:
-                print(f"注册打包字体失败: {e}")
+        # 3. _app目录（Android常见路径）
+        possible_paths.append('/data/data/org.offlineqa/files/app/fonts/NotoSansSC-Regular.ttf')
+        possible_paths.append('/data/data/org.offlineqa/files/app/NotoSansSC-Regular.ttf')
 
-        # 尝试Android系统字体
+        # 4. Android系统字体
         android_fonts = [
             '/system/fonts/DroidSansFallback.ttf',
             '/system/fonts/NotoSansCJK-Regular.ttc',
@@ -66,13 +71,17 @@ def register_chinese_font():
             '/system/fonts/Roboto-Regular.ttf',
             '/system/fonts/simhei.ttf',
             '/system/fonts/simsun.ttf',
+            '/system/fonts/SourceSansPro-Regular.ttf',
         ]
+        possible_paths.extend(android_fonts)
 
-        for font_path in android_fonts:
+        # 尝试所有可能的路径
+        for font_path in possible_paths:
+            print(f"检查字体路径: {font_path} -> 存在: {os.path.exists(font_path)}")
             if os.path.exists(font_path):
                 try:
                     LabelBase.register(name='ChineseFont', fn_regular=font_path)
-                    print(f"使用系统字体: {font_path}")
+                    print(f"成功注册字体: {font_path}")
                     return True
                 except Exception as e:
                     print(f"注册字体失败 {font_path}: {e}")
@@ -120,7 +129,8 @@ class OfflineQALayout(BoxLayout):
             text='离线搜题宝',
             font_size='24sp',
             bold=True,
-            color=UI['theme_color']
+            color=UI['theme_color'],
+            font_name='ChineseFont'
         )
         title_layout.add_widget(title_label)
         self.add_widget(title_layout)
@@ -130,7 +140,8 @@ class OfflineQALayout(BoxLayout):
             text='正在初始化...',
             font_size='14sp',
             size_hint_y=0.05,
-            color=[0.5, 0.5, 0.5, 1]
+            color=[0.5, 0.5, 0.5, 1],
+            font_name='ChineseFont'
         )
         self.add_widget(self.status_label)
 
@@ -138,7 +149,8 @@ class OfflineQALayout(BoxLayout):
         self.stats_label = Label(
             text='题库: 0道题',
             font_size='14sp',
-            size_hint_y=0.05
+            size_hint_y=0.05,
+            font_name='ChineseFont'
         )
         self.add_widget(self.stats_label)
 
@@ -151,6 +163,7 @@ class OfflineQALayout(BoxLayout):
             font_size='20sp',
             background_color=UI['theme_color'],
             background_normal='',
+            font_name='ChineseFont'
         )
         self.camera_btn.bind(on_press=self.on_camera_click)
         btn_layout.add_widget(self.camera_btn)
@@ -161,6 +174,7 @@ class OfflineQALayout(BoxLayout):
             font_size='20sp',
             background_color=UI['accent_color'],
             background_normal='',
+            font_name='ChineseFont'
         )
         self.import_btn.bind(on_press=self.on_import_click)
         btn_layout.add_widget(self.import_btn)
@@ -175,7 +189,8 @@ class OfflineQALayout(BoxLayout):
             text='或手动输入题目文字：',
             font_size='14sp',
             size_hint_y=0.3,
-            halign='left'
+            halign='left',
+            font_name='ChineseFont'
         )
         input_layout.add_widget(input_label)
 
@@ -184,6 +199,7 @@ class OfflineQALayout(BoxLayout):
             font_size='14sp',
             size_hint_y=0.7,
             multiline=True,
+            font_name='ChineseFont'
         )
         input_layout.add_widget(self.question_input)
 
@@ -196,6 +212,7 @@ class OfflineQALayout(BoxLayout):
             size_hint_y=0.08,
             background_color=UI['theme_color'],
             background_normal='',
+            font_name='ChineseFont'
         )
         self.search_btn.bind(on_press=self.on_search_click)
         self.add_widget(self.search_btn)
@@ -217,7 +234,8 @@ class OfflineQALayout(BoxLayout):
             height=100,
             halign='left',
             valign='top',
-            text_size=(Window.width - 20, None)
+            text_size=(Window.width - 20, None),
+            font_name='ChineseFont'
         )
         self.result_layout.add_widget(self.result_label)
         self.result_scroll.add_widget(self.result_layout)
