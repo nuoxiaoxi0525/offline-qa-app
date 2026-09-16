@@ -534,12 +534,42 @@ class OfflineQALayout(BoxLayout):
     def _on_file_selected_plyer(self, selection):
         """plyer文件选择回调"""
         if not selection:
+            print("没有选择文件")
             return
-        file_path = selection[0]
+
+        # 处理不同类型的返回值
+        if isinstance(selection, list):
+            if len(selection) == 0:
+                return
+            file_path = selection[0]
+        elif isinstance(selection, str):
+            file_path = selection
+        else:
+            file_path = str(selection)
+
+        # 确保路径是字符串
+        if isinstance(file_path, bytes):
+            file_path = file_path.decode('utf-8')
+
+        print(f"选择的文件: {file_path}")
+        print(f"文件类型: {type(file_path)}")
+        print(f"文件存在: {os.path.exists(file_path)}")
+
         self._on_file_selected(file_path)
 
     def _on_file_selected(self, file_path):
         """选择文件后导入"""
+        # 确保路径是字符串
+        if isinstance(file_path, bytes):
+            file_path = file_path.decode('utf-8')
+
+        print(f"导入文件: {file_path}")
+        print(f"文件存在: {os.path.exists(file_path)}")
+
+        if not os.path.exists(file_path):
+            self._show_error(f'文件不存在: {file_path}')
+            return
+
         self.status_label.text = '正在导入题库...'
         self.import_btn.disabled = True
 
