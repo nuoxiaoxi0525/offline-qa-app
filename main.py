@@ -42,12 +42,18 @@ sys.excepthook = excepthook
 def register_chinese_font():
     """注册支持中文的字体"""
     try:
+        # 获取当前脚本所在目录（APK打包的资源目录）
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+
         # 优先使用打包的字体
-        bundled_font = os.path.join(BASE_DIR, 'fonts', 'NotoSansSC-Regular.ttf')
+        bundled_font = os.path.join(script_dir, 'fonts', 'NotoSansSC-Regular.ttf')
+        print(f"查找打包字体: {bundled_font}")
+        print(f"文件存在: {os.path.exists(bundled_font)}")
+
         if os.path.exists(bundled_font):
             try:
                 LabelBase.register(name='ChineseFont', fn_regular=bundled_font)
-                print(f"使用打包字体: {bundled_font}")
+                print(f"成功注册打包字体: {bundled_font}")
                 return True
             except Exception as e:
                 print(f"注册打包字体失败: {e}")
@@ -58,6 +64,8 @@ def register_chinese_font():
             '/system/fonts/NotoSansCJK-Regular.ttc',
             '/system/fonts/NotoSansSC-Regular.ttf',
             '/system/fonts/Roboto-Regular.ttf',
+            '/system/fonts/simhei.ttf',
+            '/system/fonts/simsun.ttf',
         ]
 
         for font_path in android_fonts:
