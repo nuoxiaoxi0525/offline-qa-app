@@ -514,9 +514,29 @@ class OfflineQALayout(BoxLayout):
             self.result_label.text = '导入器未初始化，请稍后再试'
             return
 
-        # 打开文件选择器
-        popup = FileChooserPopup(on_select=self._on_file_selected)
-        popup.open()
+        # 请求存储权限
+        try:
+            from android.permissions import request_permissions, Permission
+            request_permissions([Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE])
+        except:
+            pass
+
+        # 尝试使用plyer的filechooser
+        try:
+            from plyer import filechooser
+            filechooser.open_file(on_selection=self._on_file_selected_plyer)
+        except Exception as e:
+            print(f"plyer filechooser失败: {e}")
+            # 降级到自定义文件选择器
+            popup = FileChooserPopup(on_select=self._on_file_selected)
+            popup.open()
+
+    def _on_file_selected_plyer(self, selection):
+        """plyer文件选择回调"""
+        if not selection:
+            return
+        file_path = selection[0]
+        self._on_file_selected(file_path)
 
     def _on_file_selected(self, file_path):
         """选择文件后导入"""
