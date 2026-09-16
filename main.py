@@ -133,11 +133,19 @@ class FileChooserPopup(Popup):
         layout.add_widget(btn_layout)
         self.content = layout
 
-        # 默认从Download目录开始
+        # 请求存储权限
+        try:
+            from android.permissions import request_permissions, Permission
+            request_permissions([
+                Permission.READ_EXTERNAL_STORAGE,
+                Permission.WRITE_EXTERNAL_STORAGE,
+                Permission.MANAGE_EXTERNAL_STORAGE
+            ])
+        except:
+            pass
+
+        # 默认从根目录开始，让用户手动浏览
         default_paths = [
-            '/sdcard/Download/',
-            '/sdcard/Downloads/',
-            '/storage/emulated/0/Download/',
             '/storage/emulated/0/',
             '/sdcard/',
             '/',
@@ -159,9 +167,29 @@ class FileChooserPopup(Popup):
         self.path_label.text = path
         self.file_list.clear_widgets()
 
+        print(f"加载目录: {path}")
+        print(f"目录存在: {os.path.exists(path)}")
+        print(f"是否是目录: {os.path.isdir(path)}")
+
         try:
             items = os.listdir(path)
-        except:
+            print(f"目录内容数量: {len(items)}")
+            print(f"目录内容: {items[:10]}")  # 只打印前10个
+        except PermissionError as e:
+            print(f"权限错误: {e}")
+            # 显示错误信息
+            error_label = Label(
+                text=f'权限不足，无法访问此目录\n请点击"上级目录"返回上一级',
+                font_size='14sp',
+                size_hint_y=None,
+                height=60,
+                font_name='ChineseFont',
+                color=[0.8, 0.3, 0.3, 1]
+            )
+            self.file_list.add_widget(error_label)
+            return
+        except Exception as e:
+            print(f"读取目录失败: {e}")
             items = []
 
         # 目录
@@ -169,10 +197,27 @@ class FileChooserPopup(Popup):
         files = []
         for item in items:
             full_path = os.path.join(path, item)
-            if os.path.isdir(full_path):
-                dirs.append(item)
-            else:
-                files.append(item)
+            try:
+                if os.path.isdir(full_path):
+                    dirs.append(item)
+                else:
+                    files.append(item)
+            except:
+                pass
+
+        print(f"目录数: {len(dirs)}, 文件数: {len(files)}")
+
+        # 如果没有内容，显示提示
+        if not dirs and not files:
+            empty_label = Label(
+                text='此目录为空',
+                font_size='14sp',
+                size_hint_y=None,
+                height=40,
+                font_name='ChineseFont',
+                color=[0.5, 0.5, 0.5, 1]
+            )
+            self.file_list.add_widget(empty_label)
 
         # 添加目录
         for d in sorted(dirs):
