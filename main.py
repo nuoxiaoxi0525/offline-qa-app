@@ -137,17 +137,20 @@ class FileChooserPopup(Popup):
         default_paths = [
             '/sdcard/Download/',
             '/sdcard/Downloads/',
-            '/sdcard/',
             '/storage/emulated/0/Download/',
             '/storage/emulated/0/',
+            '/sdcard/',
+            '/',
         ]
         
-        self.current_path = '/sdcard/'
+        self.current_path = '/'
         for p in default_paths:
+            print(f"检查路径: {p} -> {os.path.exists(p)}")
             if os.path.exists(p):
                 self.current_path = p
                 break
         
+        print(f"使用路径: {self.current_path}")
         self.load_dir(self.current_path)
 
     def load_dir(self, path):
@@ -421,48 +424,17 @@ class OfflineQALayout(BoxLayout):
 
     def on_camera_click(self, instance):
         """拍照搜题按钮点击"""
-        self.status_label.text = '正在打开相机...'
-        self.camera_btn.disabled = True
-
-        def camera_thread():
-            try:
-                from plyer import camera
-
-                # 请求相机权限
-                try:
-                    from android.permissions import request_permissions, Permission
-                    request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE])
-                except:
-                    pass
-
-                # 拍照保存路径
-                photo_path = os.path.join(TEMP_DIR, 'question_photo.jpg')
-
-                # 调用系统相机拍照
-                camera.take_picture(filename=photo_path, on_complete=lambda path: self._on_photo_taken(path))
-
-                # 等待拍照完成
-                import time
-                for i in range(30):
-                    if os.path.exists(photo_path):
-                        break
-                    time.sleep(1)
-
-                if os.path.exists(photo_path):
-                    self._set_status('正在识别题目...')
-                    self._process_photo(photo_path)
-                else:
-                    self._set_status('拍照超时，请重试')
-                    self.camera_btn.disabled = False
-
-            except Exception as e:
-                error_msg = f'拍照失败: {str(e)[:50]}'
-                self._set_status(error_msg)
-                print(f'拍照失败: {e}')
-                traceback.print_exc()
-                self.camera_btn.disabled = False
-
-        threading.Thread(target=camera_thread, daemon=True).start()
+        self.status_label.text = '拍照搜题说明'
+        self.result_label.text = (
+            '📷 拍照搜题功能说明：\n\n'
+            '拍照搜题功能正在完善中。\n\n'
+            '当前版本请使用手动输入功能：\n'
+            '1. 在下方输入框中输入题目文字\n'
+            '2. 点击"搜索"按钮\n'
+            '3. 即可查看答案和解析\n\n'
+            '或者，您可以先导入题库，\n'
+            '然后使用手动输入搜题。'
+        )
 
     def _on_photo_taken(self, path):
         """拍照完成回调"""
@@ -521,15 +493,9 @@ class OfflineQALayout(BoxLayout):
         except:
             pass
 
-        # 尝试使用plyer的filechooser
-        try:
-            from plyer import filechooser
-            filechooser.open_file(on_selection=self._on_file_selected_plyer)
-        except Exception as e:
-            print(f"plyer filechooser失败: {e}")
-            # 降级到自定义文件选择器
-            popup = FileChooserPopup(on_select=self._on_file_selected)
-            popup.open()
+        # 使用自定义文件选择器
+        popup = FileChooserPopup(on_select=self._on_file_selected)
+        popup.open()
 
     def _on_file_selected_plyer(self, selection):
         """plyer文件选择回调"""
