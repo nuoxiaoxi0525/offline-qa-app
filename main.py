@@ -323,9 +323,23 @@ class OfflineQALayout(BoxLayout):
             text='题库: 0道题',
             font_size='14sp',
             size_hint_y=0.05,
+            color=[0, 0, 0, 1],
             font_name='ChineseFont'
         )
         self.add_widget(self.stats_label)
+
+        # 调试信息（显示当前目录）
+        self.debug_label = Label(
+            text='调试信息加载中...',
+            font_size='10sp',
+            size_hint_y=0.08,
+            color=[0.3, 0.3, 0.3, 1],
+            halign='left',
+            valign='top',
+            text_size=(Window.width - 20, None),
+            font_name='ChineseFont'
+        )
+        self.add_widget(self.debug_label)
 
         # 主按钮区域
         btn_layout = BoxLayout(size_hint_y=0.25, spacing=10, padding=5)
@@ -361,6 +375,7 @@ class OfflineQALayout(BoxLayout):
             font_size='14sp',
             size_hint_y=0.3,
             halign='left',
+            color=[0, 0, 0, 1],
             font_name='ChineseFont'
         )
         input_layout.add_widget(input_label)
@@ -406,6 +421,7 @@ class OfflineQALayout(BoxLayout):
             halign='left',
             valign='top',
             text_size=(Window.width - 20, None),
+            color=[0, 0, 0, 1],
             font_name='ChineseFont'
         )
         self.result_layout.add_widget(self.result_label)
@@ -491,6 +507,7 @@ class OfflineQALayout(BoxLayout):
                         print(f'统计或索引构建失败: {e}')
 
                 Clock.schedule_once(lambda dt: self._update_stats(), 0)
+                Clock.schedule_once(lambda dt: self._update_debug(), 0)
                 self._set_status('准备就绪')
                 self._initialized = True
 
@@ -510,6 +527,27 @@ class OfflineQALayout(BoxLayout):
                 self.stats_label.text = f'题库: {stats["total"]}道题'
             except Exception as e:
                 print(f'获取统计失败: {e}')
+
+    def _update_debug(self):
+        """更新调试信息，显示当前目录和文件列表"""
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            cwd = os.getcwd()
+
+            debug_text = f'调试信息:\n'
+            debug_text += f'cwd: {cwd}\n'
+            debug_text += f'__file__: {__file__}\n'
+            debug_text += f'目录内容: '
+
+            try:
+                files = os.listdir(cwd)
+                debug_text += str(files[:10])
+            except:
+                debug_text += '无法读取'
+
+            self.debug_label.text = debug_text
+        except Exception as e:
+            self.debug_label.text = f'调试信息错误: {e}'
 
     def on_camera_click(self, instance):
         """拍照搜题按钮点击"""
