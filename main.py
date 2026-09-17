@@ -430,21 +430,48 @@ class OfflineQALayout(BoxLayout):
                 except Exception as e:
                     print(f'搜题引擎初始化失败: {e}')
 
-                if self.question_bank:
+                # 自动导入内置题库
+                if self.question_bank and self.importer is None:
+                    try:
+                        from importer import get_importer
+                        self.importer = get_importer()
+                    except Exception as e:
+                        print(f'导入器初始化失败: {e}')
+
+                # 检查题库是否为空，如果为空则自动导入内置题库
+                if self.question_bank and self.importer:
+                    try:
+                        stats = self.question_bank.get_statistics()
+                        if stats['total'] == 0:
+                            self._set_status('正在导入内置题库...')
+                            print('题库为空，自动导入内置题库...')
+
+                            # 获取内置题库文件路径
+                            script_dir = os.path.dirname(os.path.abspath(__file__))
+                            assets_dir = os.path.join(script_dir, 'assets')
+
+                            if os.path.exists(assets_dir):
+                                for filename in os.listdir(assets_dir):
+                                    if filename.endswith('.xlsx'):
+                                        file_path = os.path.join(assets_dir, filename)
+                                        print(f'导入内置题库: {filename}')
+                                        success, fail, error = self.importer.import_file(file_path)
+                                        if error:
+                                            print(f'导入 {filename} 失败: {error}')
+                                        else:
+                                            print(f'导入 {filename} 成功: {success} 道题')
+                    except Exception as e:
+                        print(f'自动导入内置题库失败: {e}')
+
+                # 构建搜索索引
+                if self.question_bank and self.search_engine:
                     try:
                         stats = self.question_bank.get_statistics()
                         if stats['total'] > 0:
                             self._set_status('正在构建搜索索引...')
-                            if self.search_engine:
-                                self.search_engine.build_index()
+                            self.search_engine.build_index()
                     except Exception as e:
                         print(f'统计或索引构建失败: {e}')
-
-                try:
-                    from importer import get_importer
-                    self.importer = get_importer()
-                except Exception as e:
-                    print(f'导入器初始化失败: {e}')
 
                 Clock.schedule_once(lambda dt: self._update_stats(), 0)
                 self._set_status('准备就绪')
