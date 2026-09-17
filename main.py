@@ -446,11 +446,27 @@ class OfflineQALayout(BoxLayout):
                             self._set_status('正在导入内置题库...')
                             print('题库为空，自动导入内置题库...')
 
-                            # 获取内置题库文件路径
+                            # 尝试多个可能的assets目录路径
                             script_dir = os.path.dirname(os.path.abspath(__file__))
-                            assets_dir = os.path.join(script_dir, 'assets')
+                            cwd = os.getcwd()
 
-                            if os.path.exists(assets_dir):
+                            possible_asset_dirs = [
+                                os.path.join(script_dir, 'assets'),
+                                os.path.join(cwd, 'assets'),
+                                os.path.join(script_dir, '..', 'assets'),
+                                '/data/data/org.offlineqa/files/app/assets',
+                                '/data/data/org.offlineqa/files/app',
+                            ]
+
+                            assets_dir = None
+                            for d in possible_asset_dirs:
+                                print(f"检查assets目录: {d} -> {os.path.exists(d)}")
+                                if os.path.exists(d):
+                                    assets_dir = d
+                                    break
+
+                            if assets_dir:
+                                print(f"使用assets目录: {assets_dir}")
                                 for filename in os.listdir(assets_dir):
                                     if filename.endswith('.xlsx'):
                                         file_path = os.path.join(assets_dir, filename)
@@ -460,8 +476,14 @@ class OfflineQALayout(BoxLayout):
                                             print(f'导入 {filename} 失败: {error}')
                                         else:
                                             print(f'导入 {filename} 成功: {success} 道题')
+                            else:
+                                print('未找到assets目录')
+                                # 列出当前目录内容用于调试
+                                print(f'当前目录: {cwd}')
+                                print(f'当前目录内容: {os.listdir(cwd)[:20]}')
                     except Exception as e:
                         print(f'自动导入内置题库失败: {e}')
+                        traceback.print_exc()
 
                 # 构建搜索索引
                 if self.question_bank and self.search_engine:

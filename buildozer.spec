@@ -35,6 +35,9 @@ android.allow_backup = True
 android.allow_native = True
 android.accept_sdk_license = True
 
+# 打包assets目录
+android.add_assets = assets
+
 # ============================================
 # p4a配置
 # 使用master分支（支持Python 3.12及以下）
