@@ -446,41 +446,36 @@ class OfflineQALayout(BoxLayout):
                             self._set_status('正在导入内置题库...')
                             print('题库为空，自动导入内置题库...')
 
-                            # 尝试多个可能的assets目录路径
                             script_dir = os.path.dirname(os.path.abspath(__file__))
                             cwd = os.getcwd()
 
-                            possible_asset_dirs = [
-                                os.path.join(script_dir, 'assets'),
-                                os.path.join(cwd, 'assets'),
-                                os.path.join(script_dir, '..', 'assets'),
-                                '/data/data/org.offlineqa/files/app/assets',
-                                '/data/data/org.offlineqa/files/app',
-                            ]
+                            print(f'script_dir: {script_dir}')
+                            print(f'cwd: {cwd}')
 
-                            assets_dir = None
-                            for d in possible_asset_dirs:
-                                print(f"检查assets目录: {d} -> {os.path.exists(d)}")
-                                if os.path.exists(d):
-                                    assets_dir = d
-                                    break
+                            # 在当前目录和脚本目录查找xlsx文件
+                            search_dirs = [script_dir, cwd]
 
-                            if assets_dir:
-                                print(f"使用assets目录: {assets_dir}")
-                                for filename in os.listdir(assets_dir):
-                                    if filename.endswith('.xlsx'):
-                                        file_path = os.path.join(assets_dir, filename)
-                                        print(f'导入内置题库: {filename}')
-                                        success, fail, error = self.importer.import_file(file_path)
-                                        if error:
-                                            print(f'导入 {filename} 失败: {error}')
-                                        else:
-                                            print(f'导入 {filename} 成功: {success} 道题')
-                            else:
-                                print('未找到assets目录')
-                                # 列出当前目录内容用于调试
-                                print(f'当前目录: {cwd}')
-                                print(f'当前目录内容: {os.listdir(cwd)[:20]}')
+                            imported_count = 0
+                            for search_dir in search_dirs:
+                                print(f'搜索目录: {search_dir}')
+                                print(f'目录存在: {os.path.exists(search_dir)}')
+
+                                if os.path.exists(search_dir):
+                                    files = os.listdir(search_dir)
+                                    print(f'目录内容: {files[:20]}')
+
+                                    for filename in files:
+                                        if filename.endswith('.xlsx'):
+                                            file_path = os.path.join(search_dir, filename)
+                                            print(f'找到Excel文件: {file_path}')
+                                            success, fail, error = self.importer.import_file(file_path)
+                                            if error:
+                                                print(f'导入 {filename} 失败: {error}')
+                                            else:
+                                                print(f'导入 {filename} 成功: {success} 道题')
+                                                imported_count += success
+
+                            print(f'总共导入了 {imported_count} 道题')
                     except Exception as e:
                         print(f'自动导入内置题库失败: {e}')
                         traceback.print_exc()
