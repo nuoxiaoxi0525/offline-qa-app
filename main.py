@@ -468,8 +468,13 @@ class OfflineQALayout(BoxLayout):
                             print(f'script_dir: {script_dir}')
                             print(f'cwd: {cwd}')
 
-                            # 在当前目录和脚本目录查找xlsx文件
-                            search_dirs = [script_dir, cwd]
+                            # 在当前目录、脚本目录、assets子目录查找xlsx文件
+                            search_dirs = [
+                                script_dir,
+                                cwd,
+                                os.path.join(script_dir, 'assets'),
+                                os.path.join(cwd, 'assets'),
+                            ]
 
                             imported_count = 0
                             for search_dir in search_dirs:
