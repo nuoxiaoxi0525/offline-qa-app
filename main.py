@@ -541,14 +541,23 @@ class OfflineQALayout(BoxLayout):
 
             debug_text = f'调试信息:\n'
             debug_text += f'cwd: {cwd}\n'
-            debug_text += f'__file__: {__file__}\n'
-            debug_text += f'目录内容: '
 
             try:
                 files = os.listdir(cwd)
-                debug_text += str(files[:10])
+                debug_text += f'根目录: {str(files[:10])}\n'
             except:
-                debug_text += '无法读取'
+                debug_text += '根目录: 无法读取\n'
+
+            # 显示assets目录内容
+            assets_dir = os.path.join(cwd, 'assets')
+            if os.path.exists(assets_dir):
+                try:
+                    assets_files = os.listdir(assets_dir)
+                    debug_text += f'assets目录: {str(assets_files[:10])}'
+                except:
+                    debug_text += 'assets目录: 无法读取'
+            else:
+                debug_text += 'assets目录: 不存在'
 
             self.debug_label.text = debug_text
         except Exception as e:
