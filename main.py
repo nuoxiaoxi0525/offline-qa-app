@@ -477,6 +477,8 @@ class OfflineQALayout(BoxLayout):
                             ]
 
                             imported_count = 0
+                            debug_import = '导入调试: '
+
                             for search_dir in search_dirs:
                                 print(f'搜索目录: {search_dir}')
                                 print(f'目录存在: {os.path.exists(search_dir)}')
@@ -485,18 +487,32 @@ class OfflineQALayout(BoxLayout):
                                     files = os.listdir(search_dir)
                                     print(f'目录内容: {files[:20]}')
 
-                                    for filename in files:
-                                        if filename.endswith('.xlsx'):
-                                            file_path = os.path.join(search_dir, filename)
-                                            print(f'找到Excel文件: {file_path}')
+                                    xlsx_files = [f for f in files if f.endswith('.xlsx')]
+                                    debug_import += f'\n目录 {search_dir[-20:]}: 找到{len(xlsx_files)}个xlsx'
+
+                                    for filename in xlsx_files:
+                                        file_path = os.path.join(search_dir, filename)
+                                        print(f'找到Excel文件: {file_path}')
+                                        debug_import += f'\n文件: {filename[:10]}...'
+
+                                        try:
                                             success, fail, error = self.importer.import_file(file_path)
                                             if error:
                                                 print(f'导入 {filename} 失败: {error}')
+                                                debug_import += f' 失败: {str(error)[:20]}'
                                             else:
                                                 print(f'导入 {filename} 成功: {success} 道题')
+                                                debug_import += f' 成功: {success}题'
                                                 imported_count += success
+                                        except Exception as e:
+                                            print(f'导入异常: {e}')
+                                            debug_import += f' 异常: {str(e)[:20]}'
 
                             print(f'总共导入了 {imported_count} 道题')
+                            debug_import += f'\n总计: {imported_count}题'
+
+                            # 把导入调试信息显示在界面上
+                            Clock.schedule_once(lambda dt: setattr(self.debug_label, 'text', debug_import), 0)
                     except Exception as e:
                         print(f'自动导入内置题库失败: {e}')
                         traceback.print_exc()
