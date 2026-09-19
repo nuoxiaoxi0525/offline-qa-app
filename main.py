@@ -511,8 +511,8 @@ class OfflineQALayout(BoxLayout):
                     debug_import += f'\n整体错误: {str(e)[:20]}'
                     traceback.print_exc()
                 
-                # 把导入调试信息显示在界面上
-                Clock.schedule_once(lambda dt: setattr(self.debug_label, 'text', debug_import), 0)
+                # 把导入调试信息显示在结果标签上（不会被覆盖）
+                Clock.schedule_once(lambda dt: setattr(self.result_label, 'text', debug_import), 0)
 
                 # 构建搜索索引
                 if self.question_bank and self.search_engine:
