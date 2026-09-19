@@ -473,12 +473,10 @@ class OfflineQALayout(BoxLayout):
                             script_dir = os.path.dirname(os.path.abspath(__file__))
                             cwd = os.getcwd()
 
-                            # 在当前目录、脚本目录、assets子目录查找xlsx文件
+                            # 只在assets目录查找CSV文件（避免重复导入）
                             search_dirs = [
-                                script_dir,
-                                cwd,
-                                os.path.join(script_dir, 'assets'),
                                 os.path.join(cwd, 'assets'),
+                                os.path.join(script_dir, 'assets'),
                             ]
 
                             imported_count = 0
