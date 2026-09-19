@@ -577,17 +577,86 @@ class OfflineQALayout(BoxLayout):
 
     def on_camera_click(self, instance):
         """拍照搜题按钮点击"""
-        self.status_label.text = '拍照搜题说明'
-        self.result_label.text = (
-            '📷 拍照搜题功能说明：\n\n'
-            '拍照搜题功能正在完善中。\n\n'
-            '当前版本请使用手动输入功能：\n'
-            '1. 在下方输入框中输入题目文字\n'
-            '2. 点击"搜索"按钮\n'
-            '3. 即可查看答案和解析\n\n'
-            '或者，您可以先导入题库，\n'
-            '然后使用手动输入搜题。'
-        )
+        try:
+            from kivy.uix.camera import Camera
+            from kivy.uix.boxlayout import BoxLayout
+            from kivy.uix.button import Button
+            from kivy.graphics.texture import Texture
+            import numpy as np
+            from PIL import Image
+            import time
+
+            self.result_label.text = '正在打开相机...'
+
+            # 请求相机权限
+            try:
+                from android.permissions import request_permissions, Permission
+                request_permissions([Permission.CAMERA])
+            except:
+                pass
+
+            # 创建相机弹窗
+            camera_popup = Popup(
+                title='拍照搜题',
+                size_hint=(0.95, 0.95),
+            )
+
+            layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+
+            # 相机预览
+            camera = Camera(
+                index=0,  # 后置摄像头
+                resolution=(640, 480),
+                play=True
+            )
+            layout.add_widget(camera)
+
+            # 拍照按钮
+            def take_photo(btn):
+                try:
+                    # 捕获当前帧
+                    texture = camera.texture
+                    if texture:
+                        # 将texture转换为PIL Image
+                        buf = texture.pixels
+                        w, h = texture.size
+                        arr = np.frombuffer(buf, dtype=np.uint8).reshape(h, w, 4)
+                        # RGBA -> RGB
+                        img = Image.fromarray(arr[:, :, :3])
+                        # 垂直翻转
+                        img = img.transpose(Image.FLIP_TOP_BOTTOM)
+
+                        # 保存照片
+                        photo_path = f'/sdcard/photo_{int(time.time())}.jpg'
+                        img.save(photo_path)
+
+                        camera.play = False
+                        camera_popup.dismiss()
+
+                        # 处理照片
+                        self._process_photo(photo_path)
+
+                except Exception as e:
+                    self.result_label.text = f'拍照失败: {str(e)[:50]}'
+                    camera_popup.dismiss()
+
+            capture_btn = Button(
+                text='拍照识别',
+                size_hint_y=0.15,
+                background_color=[0.2, 0.6, 0.8, 1],
+                background_normal='',
+                font_name='ChineseFont'
+            )
+            capture_btn.bind(on_press=take_photo)
+            layout.add_widget(capture_btn)
+
+            camera_popup.content = layout
+            camera_popup.open()
+
+        except Exception as e:
+            self.result_label.text = f'相机打开失败: {str(e)[:50]}\n\n请使用手动输入搜题功能。'
+            import traceback
+            traceback.print_exc()
 
     def _on_photo_taken(self, path):
         """拍照完成回调"""

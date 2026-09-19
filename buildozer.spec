@@ -27,7 +27,7 @@ requirements = python3==3.11.9,hostpython3==3.11.9,kivy,numpy,Pillow,plyer,onnxr
 # ============================================
 orientation = portrait
 fullscreen = 0
-android.permissions = CAMERA,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,MANAGE_EXTERNAL_STORAGE
+android.permissions = CAMERA,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,MANAGE_EXTERNAL_STORAGE,RECORD_AUDIO
 android.api = 33
 android.minapi = 24
 android.archs = arm64-v8a
