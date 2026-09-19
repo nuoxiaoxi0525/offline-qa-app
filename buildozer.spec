@@ -10,7 +10,7 @@ title = 离线搜题宝
 package.name = offlineqa
 package.domain = org.offlineqa
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,json,txt,onnx,ttf,xlsx,xls,csv
+source.include_exts = py,png,jpg,kv,atlas,json,txt,onnx,ttf,xlsx,xls,csv,txt
 
 # 版本
 version = 1.0.0

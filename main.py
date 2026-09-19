@@ -488,10 +488,11 @@ class OfflineQALayout(BoxLayout):
                                 
                                 if os.path.exists(search_dir):
                                     files = os.listdir(search_dir)
-                                    xlsx_files = [f for f in files if f.endswith('.xlsx')]
-                                    debug_import += f' 找到{len(xlsx_files)}个xlsx'
+                                    # 优先导入CSV文件（不需要openpyxl）
+                                    csv_files = [f for f in files if f.endswith('.csv')]
+                                    debug_import += f' 找到{len(csv_files)}个csv'
 
-                                    for filename in xlsx_files:
+                                    for filename in csv_files:
                                         file_path = os.path.join(search_dir, filename)
                                         debug_import += f'\n  {filename}'
 
