@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 离线搜题宝 - 完整功能版本
 支持：拍照OCR识别 + 本地题库导入 + 离线语义搜题
@@ -891,3 +891,4 @@ if __name__ == '__main__':
     except Exception as e:
         print(f'APP运行错误: {e}')
         traceback.print_exc()
+
