@@ -623,8 +623,9 @@ class OfflineQALayout(BoxLayout):
                         arr = np.frombuffer(buf, dtype=np.uint8).reshape(h, w, 4)
                         # RGBA -> RGB
                         img = Image.fromarray(arr[:, :, :3])
-                        # 垂直翻转
+                        # 垂直翻转 + 旋转90度（修正竖屏显示）
                         img = img.transpose(Image.FLIP_TOP_BOTTOM)
+                        img = img.rotate(90, expand=True)
 
                         # 保存照片
                         photo_path = f'/sdcard/photo_{int(time.time())}.jpg'
@@ -666,35 +667,50 @@ class OfflineQALayout(BoxLayout):
         """处理拍照：OCR识别 + 自动搜题"""
         def process_thread():
             try:
+                debug_msg = f'处理照片: {photo_path}\n'
+                debug_msg += f'文件存在: {os.path.exists(photo_path)}\n'
+
                 # 初始化OCR引擎
                 if not self.ocr_engine:
                     self._set_status('正在加载OCR模型...')
-                    from ocr_engine import get_ocr_engine
-                    self.ocr_engine = get_ocr_engine()
+                    try:
+                        from ocr_engine import get_ocr_engine
+                        self.ocr_engine = get_ocr_engine()
+                        debug_msg += 'OCR引擎加载成功\n'
+                    except Exception as e:
+                        debug_msg += f'OCR引擎加载失败: {str(e)[:30]}\n'
+                        raise
 
                 # OCR识别
                 self._set_status('正在识别题目文字...')
+                debug_msg += '开始OCR识别...\n'
                 text = self.ocr_engine.recognize(photo_path)
+                debug_msg += f'识别结果长度: {len(text) if text else 0}\n'
 
                 if not text or len(text.strip()) < 5:
-                    Clock.schedule_once(lambda dt: self._show_error('识别失败，请重新拍照'), 0)
+                    debug_msg += '识别失败：结果太短\n'
+                    Clock.schedule_once(lambda dt: setattr(self.result_label, 'text', debug_msg), 0)
                     self.camera_btn.disabled = False
                     return
 
                 # 提取题目文本
                 question_text = self.ocr_engine.extract_question_text(text)
+                debug_msg += f'题目文本: {question_text[:30]}...\n'
                 self.question_input.text = question_text
 
                 # 自动搜索
                 self._set_status('正在搜索题库...')
+                debug_msg += '开始搜索题库...\n'
                 results = self.search_engine.search(question_text, top_k=5)
+                debug_msg += f'找到{len(results)}个结果\n'
 
-                # 显示结果
-                Clock.schedule_once(lambda dt: self._show_results(question_text, results), 0)
+                # 显示调试信息和结果
+                Clock.schedule_once(lambda dt: self._show_results(question_text, results, debug_msg), 0)
 
             except Exception as e:
                 error_msg = f'识别失败: {str(e)[:50]}'
-                Clock.schedule_once(lambda dt: self._show_error(error_msg), 0)
+                debug_msg += f'错误: {error_msg}\n'
+                Clock.schedule_once(lambda dt: setattr(self.result_label, 'text', debug_msg), 0)
                 print(f'OCR处理失败: {e}')
                 traceback.print_exc()
             finally:
@@ -806,7 +822,7 @@ class OfflineQALayout(BoxLayout):
 
         threading.Thread(target=search_thread, daemon=True).start()
 
-    def _show_results(self, query_text, results):
+    def _show_results(self, query_text, results, debug_info=''):
         """显示搜索结果"""
         self.search_btn.disabled = False
 
@@ -814,6 +830,7 @@ class OfflineQALayout(BoxLayout):
             self.result_label.text = (
                 f'未找到匹配的题目\n\n'
                 f'搜索关键词：{query_text[:50]}...\n\n'
+                f'{debug_info}\n\n'
                 f'请尝试：\n'
                 f'1. 输入更多题目关键词\n'
                 f'2. 检查是否已导入题库\n'
@@ -823,6 +840,8 @@ class OfflineQALayout(BoxLayout):
             return
 
         result_text = f'🔍 搜索到 {len(results)} 个结果：\n\n'
+        if debug_info:
+            result_text += f'调试信息：{debug_info}\n\n'
 
         for i, (question, similarity) in enumerate(results, 1):
             score = similarity * 100
