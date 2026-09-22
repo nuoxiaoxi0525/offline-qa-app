@@ -627,8 +627,11 @@ class OfflineQALayout(BoxLayout):
                         img = img.transpose(Image.FLIP_TOP_BOTTOM)
                         img = img.rotate(90, expand=True)
 
-                        # 保存照片
-                        photo_path = f'/sdcard/photo_{int(time.time())}.jpg'
+                        # 保存照片到APP私有目录（不需要存储权限）
+                        photo_dir = os.path.join(os.getcwd(), 'photos')
+                        if not os.path.exists(photo_dir):
+                            os.makedirs(photo_dir)
+                        photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
                         img.save(photo_path)
 
                         camera.play = False
@@ -891,4 +894,5 @@ if __name__ == '__main__':
     except Exception as e:
         print(f'APP运行错误: {e}')
         traceback.print_exc()
+
 
