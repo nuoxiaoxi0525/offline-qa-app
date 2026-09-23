@@ -424,6 +424,8 @@ class OfflineQALayout(BoxLayout):
             color=[0, 0, 0, 1],
             font_name='ChineseFont'
         )
+        # 让label高度根据内容自动调整
+        self.result_label.bind(texture_size=lambda instance, value: setattr(instance, 'height', value[1] + 20))
         self.result_layout.add_widget(self.result_label)
         self.result_scroll.add_widget(self.result_layout)
         self.add_widget(self.result_scroll)
@@ -894,5 +896,6 @@ if __name__ == '__main__':
     except Exception as e:
         print(f'APP运行错误: {e}')
         traceback.print_exc()
+
 
 
