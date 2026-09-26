@@ -475,11 +475,12 @@ class OfflineQALayout(BoxLayout):
                             script_dir = os.path.dirname(os.path.abspath(__file__))
                             cwd = os.getcwd()
 
-                            # 只在assets目录查找CSV文件（避免重复导入）
-                            search_dirs = [
-                                os.path.join(cwd, 'assets'),
-                                os.path.join(script_dir, 'assets'),
-                            ]
+                            # 只在第一个存在的assets目录查找CSV文件（避免重复导入）
+                            search_dirs = []
+                            if os.path.exists(os.path.join(cwd, 'assets')):
+                                search_dirs = [os.path.join(cwd, 'assets')]
+                            elif os.path.exists(os.path.join(script_dir, 'assets')):
+                                search_dirs = [os.path.join(script_dir, 'assets')]
 
                             imported_count = 0
 
@@ -597,20 +598,38 @@ class OfflineQALayout(BoxLayout):
             except:
                 pass
 
-            # 创建相机弹窗
+            # 创建相机弹窗 - 全屏显示
             camera_popup = Popup(
-                title='拍照搜题',
-                size_hint=(0.95, 0.95),
+                title='',
+                size_hint=(1, 1),
+                separator_height=0,
+                background_color=[0, 0, 0, 1],
             )
 
-            layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+            layout = BoxLayout(orientation='vertical', padding=0, spacing=0)
 
-            # 相机预览
+            # 相机预览 - 修正竖屏角度
+            from kivy.graphics import Rotate, PushMatrix, PopMatrix
+            
             camera = Camera(
                 index=0,  # 后置摄像头
-                resolution=(640, 480),
-                play=True
+                resolution=(1280, 720),
+                play=True,
+                allow_stretch=True
             )
+            
+            # 旋转摄像头预览90度以适配竖屏
+            with camera.canvas.before:
+                PushMatrix()
+                cam_rotate = Rotate(angle=-90, origin=camera.center)
+            with camera.canvas.after:
+                PopMatrix()
+            
+            # 绑定中心变化更新旋转原点
+            def update_origin(*args):
+                cam_rotate.origin = camera.center
+            camera.bind(center=update_origin)
+            
             layout.add_widget(camera)
 
             # 拍照按钮
@@ -646,15 +665,32 @@ class OfflineQALayout(BoxLayout):
                     self.result_label.text = f'拍照失败: {str(e)[:50]}'
                     camera_popup.dismiss()
 
+            # 底部按钮栏
+            btn_layout = BoxLayout(orientation='horizontal', size_hint_y=0.12, padding=20, spacing=20)
+            
+            close_btn = Button(
+                text='关闭',
+                size_hint_x=0.3,
+                background_color=[0.5, 0.5, 0.5, 1],
+                background_normal='',
+                font_name='ChineseFont',
+                font_size=18
+            )
+            close_btn.bind(on_press=lambda x: (camera_popup.dismiss(), setattr(camera, 'play', False)))
+            btn_layout.add_widget(close_btn)
+            
             capture_btn = Button(
                 text='拍照识别',
-                size_hint_y=0.15,
+                size_hint_x=0.7,
                 background_color=[0.2, 0.6, 0.8, 1],
                 background_normal='',
-                font_name='ChineseFont'
+                font_name='ChineseFont',
+                font_size=20
             )
             capture_btn.bind(on_press=take_photo)
-            layout.add_widget(capture_btn)
+            btn_layout.add_widget(capture_btn)
+            
+            layout.add_widget(btn_layout)
 
             camera_popup.content = layout
             camera_popup.open()
@@ -679,7 +715,7 @@ class OfflineQALayout(BoxLayout):
                 if not self.ocr_engine:
                     self._set_status('正在加载OCR模型...')
                     try:
-                        from ocr_engine import get_ocr_engine
+                        from ocr_engine_simple import get_ocr_engine
                         self.ocr_engine = get_ocr_engine()
                         debug_msg += 'OCR引擎加载成功\n'
                     except Exception as e:
@@ -896,6 +932,11 @@ if __name__ == '__main__':
     except Exception as e:
         print(f'APP运行错误: {e}')
         traceback.print_exc()
+
+
+
+
+
 
 
 

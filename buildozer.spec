@@ -1,4 +1,4 @@
-[app]
+﻿[app]
 
 # ============================================
 # 离线搜题宝 - Buildozer APK打包配置
@@ -20,7 +20,7 @@ version = 1.0.0
 # 第4步修正2：移除pandas，用openpyxl读取Excel
 # 纯Python实现TF-IDF搜题匹配
 # ============================================
-requirements = python3==3.11.9,hostpython3==3.11.9,kivy,numpy,Pillow,plyer,onnxruntime,rapidocr-onnxruntime,openpyxl
+requirements = python3==3.11.9,hostpython3==3.11.9,kivy,numpy,Pillow,plyer,onnxruntime,openpyxl
 
 # ============================================
 # 安卓配置
@@ -49,3 +49,5 @@ log_level = 2
 warn_on_root = 1
 build_dir = .buildozer
 bin_dir = bin
+
+
