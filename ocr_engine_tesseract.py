@@ -5,7 +5,6 @@ Tesseract OCR引擎 - 使用Tesseract Android库
 """
 import os
 import re
-import shutil
 
 # 尝试导入jnius（仅在Android上可用）
 try:
@@ -50,26 +49,55 @@ class TesseractOCREngine:
             
             error_details.append(f"tessdata目录: {self._tessdata_path}")
             
+            # 列出assets目录中的所有文件（调试用）
+            try:
+                asset_manager = context.getAssets()
+                asset_files = list(asset_manager.list(''))
+                error_details.append(f"assets根目录文件({len(asset_files)}): {asset_files[:30]}")
+                
+                # 尝试列出tessdata子目录
+                try:
+                    tessdata_files = list(asset_manager.list('tessdata'))
+                    error_details.append(f"assets/tessdata文件: {tessdata_files}")
+                except Exception as e:
+                    error_details.append(f"列出assets/tessdata失败: {e}")
+            except Exception as e:
+                error_details.append(f"列出assets失败: {e}")
+            
             # 检查语言包是否存在，如果不存在则从assets复制
             lang_file = os.path.join(self._tessdata_path, 'chi_sim.traineddata')
             if not os.path.exists(lang_file):
                 error_details.append("语言包不存在，尝试从assets复制")
-                self._copy_language_data(context)
+                self._copy_language_data(context, error_details)
             else:
-                error_details.append("语言包已存在")
+                file_size = os.path.getsize(lang_file)
+                error_details.append(f"语言包已存在，大小: {file_size} 字节")
             
-            # 初始化Tesseract
-            try:
-                TessBaseAPI = autoclass('com.googlecode.tesseract.android.TessBaseAPI')
-            except:
+            # 初始化Tesseract - 尝试多个可能的包名
+            tess_class = None
+            package_names = [
+                'com.googlecode.tesseract.android.TessBaseAPI',
+                'cz.adaptech.tesseract4android.TessBaseAPI',
+                'com.google.tesseract.android.TessBaseAPI',
+            ]
+            
+            for pkg in package_names:
                 try:
-                    TessBaseAPI = autoclass('cz.adaptech.tesseract4android.TessBaseAPI')
+                    tess_class = autoclass(pkg)
+                    error_details.append(f"成功加载Tesseract类: {pkg}")
+                    break
                 except Exception as e:
-                    error_details.append(f"无法加载TessBaseAPI类: {e}")
-                    raise RuntimeError("\n".join(error_details))
+                    error_details.append(f"加载类失败 {pkg}: {str(e)[:100]}")
             
-            self.base_api = TessBaseAPI()
+            if tess_class is None:
+                raise RuntimeError("无法加载任何Tesseract类")
+            
+            self.base_api = tess_class()
+            error_details.append("TessBaseAPI实例创建成功")
+            
+            # 初始化
             success = self.base_api.init(files_dir, 'chi_sim')
+            error_details.append(f"init返回值: {success}")
             
             if not success:
                 error_details.append("Tesseract初始化失败，init返回False")
@@ -89,40 +117,45 @@ class TesseractOCREngine:
             error_detail += f"\n{traceback.format_exc()}"
             raise RuntimeError(f"Tesseract OCR引擎初始化失败:\n{error_detail}")
     
-    def _copy_language_data(self, context):
+    def _copy_language_data(self, context, error_details):
         """从assets目录复制语言包到私有目录"""
         try:
-            # 尝试从assets复制
             asset_manager = context.getAssets()
             
-            # 列出assets目录中的文件
-            asset_files = asset_manager.list('')
-            
-            # 查找语言包文件
+            # 查找语言包文件 - 尝试多个位置
             lang_file_name = None
-            for f in asset_files:
-                if f.endswith('.traineddata'):
-                    lang_file_name = f
-                    break
+            search_paths = ['', 'tessdata', 'assets', 'data']
+            
+            for path in search_paths:
+                try:
+                    files = list(asset_manager.list(path))
+                    for f in files:
+                        if f.endswith('.traineddata'):
+                            if path:
+                                lang_file_name = os.path.join(path, f)
+                            else:
+                                lang_file_name = f
+                            error_details.append(f"在assets/{path}找到语言包: {f}")
+                            break
+                    if lang_file_name:
+                        break
+                except Exception as e:
+                    error_details.append(f"搜索assets/{path}失败: {e}")
             
             if lang_file_name is None:
-                # 尝试tessdata子目录
+                # 列出所有assets文件帮助调试
+                all_files = []
                 try:
-                    tessdata_files = asset_manager.list('tessdata')
-                    for f in tessdata_files:
-                        if f.endswith('.traineddata'):
-                            lang_file_name = os.path.join('tessdata', f)
-                            break
+                    all_files = list(asset_manager.list(''))
                 except:
                     pass
-            
-            if lang_file_name is None:
-                raise RuntimeError("在assets中未找到语言包文件(.traineddata)")
+                raise RuntimeError(f"在assets中未找到语言包文件(.traineddata)。assets文件: {all_files}")
             
             # 复制文件
             input_stream = asset_manager.open(lang_file_name)
             output_path = os.path.join(self._tessdata_path, 'chi_sim.traineddata')
             
+            total_bytes = 0
             with open(output_path, 'wb') as output:
                 buffer = bytearray(8192)
                 while True:
@@ -130,13 +163,14 @@ class TesseractOCREngine:
                     if read == -1:
                         break
                     output.write(buffer[:read])
+                    total_bytes += read
             
             input_stream.close()
+            error_details.append(f"语言包复制完成，大小: {total_bytes} 字节")
             
             # 验证文件大小
-            file_size = os.path.getsize(output_path)
-            if file_size < 1000000:  # 小于1MB可能有问题
-                raise RuntimeError(f"语言包文件太小: {file_size} 字节")
+            if total_bytes < 1000000:
+                raise RuntimeError(f"语言包文件太小: {total_bytes} 字节")
             
         except Exception as e:
             raise RuntimeError(f"复制语言包失败: {e}")
