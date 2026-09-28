@@ -684,7 +684,7 @@ class OfflineQALayout(BoxLayout):
                 if not self.ocr_engine:
                     self._set_status('正在加载OCR模型...')
                     try:
-                        from ocr_engine_android import get_ocr_engine
+                        from ocr_engine_tesseract import get_ocr_engine
                         self.ocr_engine = get_ocr_engine()
                         debug_msg += 'OCR引擎加载成功\n'
                     except Exception as e:

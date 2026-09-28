@@ -10,7 +10,7 @@ title = 离线搜题宝
 package.name = offlineqa
 package.domain = org.offlineqa
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,json,txt,onnx,ttf,xlsx,xls,csv,txt
+source.include_exts = py,png,jpg,kv,atlas,json,txt,onnx,ttf,xlsx,xls,csv,txt,traineddata
 
 # 版本
 version = 1.0.0
@@ -34,7 +34,7 @@ android.archs = arm64-v8a
 android.allow_backup = True
 android.allow_native = True
 android.accept_sdk_license = True
-android.dependencies = com.google.android.gms:play-services-vision:20.1.3
+android.dependencies = cz.adaptech.tesseract4android:tesseract4android:4.7.0
 
 # ============================================
 # p4a配置
