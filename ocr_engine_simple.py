@@ -10,8 +10,12 @@ from PIL import Image
 
 try:
     import onnxruntime as ort
-except ImportError:
+    _ORT_IMPORT_ERROR = None
+except Exception as e:
     ort = None
+    _ORT_IMPORT_ERROR = str(e)
+    import traceback
+    _ORT_IMPORT_TRACEBACK = traceback.format_exc()
 
 from config import MODEL_DIR
 
@@ -48,7 +52,8 @@ class SimpleOCREngine:
             return
         
         if ort is None:
-            raise RuntimeError("onnxruntime未安装")
+            error_msg = f"onnxruntime未安装或导入失败\n错误: {_ORT_IMPORT_ERROR}\n\n详细信息: {_ORT_IMPORT_TRACEBACK}"
+            raise RuntimeError(error_msg)
         
         # 查找模型文件
         det_model = None
