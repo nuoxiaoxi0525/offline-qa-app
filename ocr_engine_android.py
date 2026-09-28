@@ -33,18 +33,43 @@ class AndroidOCREngine:
         if not _JNIUS_AVAILABLE:
             raise RuntimeError("jnius不可用，只能在Android设备上使用此OCR引擎")
         
+        error_details = []
+        
         try:
             # 获取Android Context
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             context = PythonActivity.mActivity
             
+            # 先检查Google Play Services是否可用
+            try:
+                GoogleApiAvailability = autoclass('com.google.android.gms.common.GoogleApiAvailability')
+                gaa = GoogleApiAvailability.getInstance()
+                result_code = gaa.isGooglePlayServicesAvailable(context)
+                # SUCCESS = 0
+                if result_code != 0:
+                    error_string = gaa.getErrorString(result_code)
+                    error_details.append(f"Google Play Services不可用: {error_string} (code={result_code})")
+                    raise RuntimeError(f"Google Play Services不可用: {error_string}")
+                else:
+                    error_details.append("Google Play Services可用")
+            except RuntimeError:
+                raise
+            except Exception as e:
+                error_details.append(f"检查Google Play Services异常: {str(e)}")
+            
             # 创建TextRecognizer
-            TextRecognizerBuilder = autoclass('com.google.android.gms.vision.text.TextRecognizer$Builder')
-            builder = TextRecognizerBuilder(context)
-            self.text_recognizer = builder.build()
+            try:
+                TextRecognizerBuilder = autoclass('com.google.android.gms.vision.text.TextRecognizer$Builder')
+                builder = TextRecognizerBuilder(context)
+                self.text_recognizer = builder.build()
+                error_details.append("TextRecognizer创建成功")
+            except Exception as e:
+                error_details.append(f"TextRecognizer创建失败: {str(e)}")
+                raise
             
             # 检查是否可用
             if not self.text_recognizer.isOperational():
+                error_details.append("TextRecognizer.isOperational()返回False")
                 raise RuntimeError("TextRecognizer不可用，可能需要下载语言包或Google Play Services")
             
             self._initialized = True
@@ -52,8 +77,17 @@ class AndroidOCREngine:
             
         except Exception as e:
             import traceback
-            self._error = f"{str(e)}\n{traceback.format_exc()}"
-            raise RuntimeError(f"Android OCR引擎初始化失败: {self._error}")
+            error_detail = "\n".join(error_details)
+            error_detail += f"\n异常: {str(e)}"
+            # 尝试获取更详细的Java异常信息
+            try:
+                if hasattr(e, 'java_exception'):
+                    java_exc = e.java_exception
+                    error_detail += f"\nJava异常详情: {java_exc.toString()}"
+            except:
+                pass
+            self._error = f"{error_detail}\n{traceback.format_exc()}"
+            raise RuntimeError(f"Android OCR引擎初始化失败:\n{self._error}")
     
     def recognize(self, image_path):
         """识别图片中的文字"""
