@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 离线搜题宝 - 完整功能版本
 支持：拍照OCR识别 + 本地题库导入 + 离线语义搜题
@@ -328,18 +328,15 @@ class OfflineQALayout(BoxLayout):
         )
         self.add_widget(self.stats_label)
 
-        # 调试信息（显示当前目录）
-        self.debug_label = Label(
-            text='调试信息加载中...',
-            font_size='10sp',
-            size_hint_y=0.08,
-            color=[0.3, 0.3, 0.3, 1],
-            halign='left',
-            valign='top',
-            text_size=(Window.width - 20, None),
+        # 状态标签
+        self.status_label = Label(
+            text='',
+            font_size='12sp',
+            size_hint_y=0.03,
+            color=[0.4, 0.4, 0.4, 1],
             font_name='ChineseFont'
         )
-        self.add_widget(self.debug_label)
+        self.add_widget(self.status_label)
 
         # 主按钮区域
         btn_layout = BoxLayout(size_hint_y=0.25, spacing=10, padding=5)
@@ -527,7 +524,7 @@ class OfflineQALayout(BoxLayout):
                         print(f'统计或索引构建失败: {e}')
 
                 Clock.schedule_once(lambda dt: self._update_stats(), 0)
-                Clock.schedule_once(lambda dt: self._update_debug(), 0)
+                
                 self._set_status('准备就绪')
                 self._initialized = True
 
@@ -548,35 +545,7 @@ class OfflineQALayout(BoxLayout):
             except Exception as e:
                 print(f'获取统计失败: {e}')
 
-    def _update_debug(self):
-        """更新调试信息，显示当前目录和文件列表"""
-        try:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            cwd = os.getcwd()
 
-            debug_text = f'调试信息:\n'
-            debug_text += f'cwd: {cwd}\n'
-
-            try:
-                files = os.listdir(cwd)
-                debug_text += f'根目录: {str(files[:10])}\n'
-            except:
-                debug_text += '根目录: 无法读取\n'
-
-            # 显示assets目录内容
-            assets_dir = os.path.join(cwd, 'assets')
-            if os.path.exists(assets_dir):
-                try:
-                    assets_files = os.listdir(assets_dir)
-                    debug_text += f'assets目录: {str(assets_files[:10])}'
-                except:
-                    debug_text += 'assets目录: 无法读取'
-            else:
-                debug_text += 'assets目录: 不存在'
-
-            self.debug_label.text = debug_text
-        except Exception as e:
-            self.debug_label.text = f'调试信息错误: {e}'
 
     def on_camera_click(self, instance):
         """拍照搜题按钮点击"""
@@ -863,7 +832,7 @@ class OfflineQALayout(BoxLayout):
 
         threading.Thread(target=search_thread, daemon=True).start()
 
-    def _show_results(self, query_text, results, debug_info=''):
+    def _show_results(self, query_text, results):
         """显示搜索结果"""
         self.search_btn.disabled = False
 
