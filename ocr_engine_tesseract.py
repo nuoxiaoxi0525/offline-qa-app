@@ -115,6 +115,14 @@ class TesseractOCREngine:
             error_detail = "\n".join(error_details)
             error_detail += f"\n异常: {str(e)}"
             error_detail += f"\n{traceback.format_exc()}"
+            # 把错误信息写入文件
+            try:
+                log_path = os.path.join(files_dir, 'ocr_error.log')
+                with open(log_path, 'w', encoding='utf-8') as f:
+                    f.write(error_detail)
+                error_detail += f"\n错误日志已保存到: {log_path}"
+            except:
+                pass
             raise RuntimeError(f"Tesseract OCR引擎初始化失败:\n{error_detail}")
     
     def _copy_language_data(self, context, error_details):
