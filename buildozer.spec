@@ -20,7 +20,7 @@ version = 1.0.0
 # 第4步修正2：移除pandas，用openpyxl读取Excel
 # 纯Python实现TF-IDF搜题匹配
 # ============================================
-requirements = python3==3.11.9,hostpython3==3.11.9,kivy,numpy,Pillow,plyer,onnxruntime-mobile,openpyxl
+requirements = python3==3.11.9,hostpython3==3.11.9,kivy,numpy,Pillow,plyer,openpyxl
 
 # ============================================
 # 安卓配置
@@ -34,6 +34,7 @@ android.archs = arm64-v8a
 android.allow_backup = True
 android.allow_native = True
 android.accept_sdk_license = True
+android.dependencies = com.google.android.gms:play-services-vision:20.1.3
 
 # ============================================
 # p4a配置
