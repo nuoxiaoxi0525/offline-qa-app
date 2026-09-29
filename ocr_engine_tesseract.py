@@ -130,7 +130,7 @@ class TesseractOCREngine:
         try:
             asset_manager = context.getAssets()
             
-            # 查找语言包文件 - 优先从fonts目录查找（已确认能被打包）
+            # 查找语言包文件 - 优先从fonts目录查找，支持.ttf和.traineddata两种扩展名
             lang_file_name = None
             search_paths = ['fonts', '', 'tessdata', 'assets', 'data']
             
@@ -139,7 +139,8 @@ class TesseractOCREngine:
                     files = list(asset_manager.list(path))
                     error_details.append(f"assets/{path}文件列表: {files[:20]}")
                     for f in files:
-                        if f.endswith('.traineddata'):
+                        # 支持.ttf（重命名后的语言包）和.traineddata两种扩展名
+                        if f.endswith('.traineddata') or f == 'chi_sim_data.ttf':
                             if path:
                                 lang_file_name = os.path.join(path, f)
                             else:

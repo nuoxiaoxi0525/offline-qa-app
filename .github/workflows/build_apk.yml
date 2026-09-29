@@ -28,7 +28,7 @@ jobs:
       - name: Download Tesseract Chinese language data
         run: |
           echo "=== Downloading Tesseract Chinese language data ==="
-          # 下载到fonts目录（已确认能被buildozer打包到assets）
+          # 下载到fonts目录，并重命名为.ttf扩展名（已确认能被buildozer打包）
           mkdir -p fonts
           URLS=(
             "https://github.com/tesseract-ocr/tessdata/raw/main/chi_sim.traineddata"
@@ -38,8 +38,8 @@ jobs:
           SUCCESS=0
           for URL in "${URLS[@]}"; do
             echo "Trying: $URL"
-            if curl -fSL --retry 3 --retry-delay 5 "$URL" -o fonts/chi_sim.traineddata; then
-              SIZE=$(stat -c%s fonts/chi_sim.traineddata)
+            if curl -fSL --retry 3 --retry-delay 5 "$URL" -o fonts/chi_sim_data.ttf; then
+              SIZE=$(stat -c%s fonts/chi_sim_data.ttf)
               echo "Downloaded size: $SIZE bytes"
               if [ "$SIZE" -gt 1000000 ]; then
                 echo "Language data downloaded successfully!"
@@ -47,7 +47,7 @@ jobs:
                 break
               else
                 echo "File too small, trying next URL..."
-                rm -f fonts/chi_sim.traineddata
+                rm -f fonts/chi_sim_data.ttf
               fi
             else
               echo "Download failed, trying next URL..."
