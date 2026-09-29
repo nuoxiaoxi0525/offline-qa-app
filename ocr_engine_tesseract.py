@@ -130,9 +130,9 @@ class TesseractOCREngine:
         try:
             asset_manager = context.getAssets()
             
-            # 查找语言包文件 - 优先从根目录查找
+            # 查找语言包文件 - 优先从fonts目录查找（已确认能被打包）
             lang_file_name = None
-            search_paths = ['', 'tessdata', 'assets', 'data']
+            search_paths = ['fonts', '', 'tessdata', 'assets', 'data']
             
             for path in search_paths:
                 try:
