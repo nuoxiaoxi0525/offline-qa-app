@@ -677,50 +677,36 @@ class OfflineQALayout(BoxLayout):
         """处理拍照：OCR识别 + 自动搜题"""
         def process_thread():
             try:
-                debug_msg = f'处理照片: {photo_path}\n'
-                debug_msg += f'文件存在: {os.path.exists(photo_path)}\n'
-
                 # 初始化OCR引擎
                 if not self.ocr_engine:
                     self._set_status('正在加载OCR模型...')
-                    try:
-                        from ocr_engine_tesseract import get_ocr_engine
-                        self.ocr_engine = get_ocr_engine()
-                        debug_msg += 'OCR引擎加载成功\n'
-                    except Exception as e:
-                        debug_msg += f'OCR引擎加载失败: {str(e)[:30]}\n'
-                        raise
+                    from ocr_engine_tesseract import get_ocr_engine
+                    self.ocr_engine = get_ocr_engine()
 
                 # OCR识别
                 self._set_status('正在识别题目文字...')
-                debug_msg += '开始OCR识别...\n'
                 text = self.ocr_engine.recognize(photo_path)
-                debug_msg += f'识别结果长度: {len(text) if text else 0}\n'
 
                 if not text or len(text.strip()) < 5:
-                    debug_msg += '识别失败：结果太短\n'
-                    Clock.schedule_once(lambda dt: setattr(self.result_label, 'text', debug_msg), 0)
+                    Clock.schedule_once(lambda dt: setattr(self.result_label, 'text', '识别失败：未能识别到文字，请确保照片清晰、光线充足'), 0)
                     self.camera_btn.disabled = False
                     return
 
                 # 提取题目文本
                 question_text = self.ocr_engine.extract_question_text(text)
-                debug_msg += f'题目文本: {question_text[:30]}...\n'
                 self.question_input.text = question_text
 
                 # 自动搜索
                 self._set_status('正在搜索题库...')
-                debug_msg += '开始搜索题库...\n'
                 results = self.search_engine.search(question_text, top_k=5)
-                debug_msg += f'找到{len(results)}个结果\n'
 
-                # 显示调试信息和结果
-                Clock.schedule_once(lambda dt: self._show_results(question_text, results, debug_msg), 0)
+                # 显示结果
+                Clock.schedule_once(lambda dt: self._show_results(question_text, results), 0)
 
             except Exception as e:
-                error_msg = f'识别失败: {str(e)[:50]}'
-                debug_msg += f'错误: {error_msg}\n'
-                Clock.schedule_once(lambda dt: setattr(self.result_label, 'text', debug_msg), 0)
+                # 不截断错误信息，完整显示
+                full_error = f'识别失败:\n{str(e)}'
+                Clock.schedule_once(lambda dt: setattr(self.result_label, 'text', full_error), 0)
                 print(f'OCR处理失败: {e}')
                 traceback.print_exc()
             finally:
