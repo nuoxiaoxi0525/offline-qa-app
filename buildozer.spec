@@ -34,7 +34,7 @@ android.archs = arm64-v8a
 android.allow_backup = True
 android.allow_native = True
 android.accept_sdk_license = True
-android.dependencies = cz.adaptech.tesseract4android:tesseract4android:4.7.0
+android.dependencies = com.rmtheis:tess-two:9.1.0
 android.add_assets = fonts/chi_sim_data.ttf
 
 # ============================================
