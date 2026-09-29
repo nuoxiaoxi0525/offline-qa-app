@@ -28,8 +28,7 @@ jobs:
       - name: Download Tesseract Chinese language data
         run: |
           echo "=== Downloading Tesseract Chinese language data ==="
-          mkdir -p tessdata
-          # 尝试多个下载源
+          # 直接下载到项目根目录，确保buildozer能打包到assets
           URLS=(
             "https://github.com/tesseract-ocr/tessdata/raw/main/chi_sim.traineddata"
             "https://raw.githubusercontent.com/tesseract-ocr/tessdata/main/chi_sim.traineddata"
@@ -38,8 +37,8 @@ jobs:
           SUCCESS=0
           for URL in "${URLS[@]}"; do
             echo "Trying: $URL"
-            if curl -fSL --retry 3 --retry-delay 5 "$URL" -o tessdata/chi_sim.traineddata; then
-              SIZE=$(stat -c%s tessdata/chi_sim.traineddata)
+            if curl -fSL --retry 3 --retry-delay 5 "$URL" -o chi_sim.traineddata; then
+              SIZE=$(stat -c%s chi_sim.traineddata)
               echo "Downloaded size: $SIZE bytes"
               if [ "$SIZE" -gt 1000000 ]; then
                 echo "Language data downloaded successfully!"
@@ -47,7 +46,7 @@ jobs:
                 break
               else
                 echo "File too small, trying next URL..."
-                rm -f tessdata/chi_sim.traineddata
+                rm -f chi_sim.traineddata
               fi
             else
               echo "Download failed, trying next URL..."
@@ -57,8 +56,8 @@ jobs:
             echo "Failed to download language data from all URLs"
             exit 1
           fi
-          echo "=== tessdata directory ==="
-          ls -la tessdata/
+          echo "=== Language data file ==="
+          ls -la chi_sim.traineddata
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4

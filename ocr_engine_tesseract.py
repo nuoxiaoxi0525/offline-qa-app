@@ -130,13 +130,14 @@ class TesseractOCREngine:
         try:
             asset_manager = context.getAssets()
             
-            # 查找语言包文件 - 尝试多个位置
+            # 查找语言包文件 - 优先从根目录查找
             lang_file_name = None
             search_paths = ['', 'tessdata', 'assets', 'data']
             
             for path in search_paths:
                 try:
                     files = list(asset_manager.list(path))
+                    error_details.append(f"assets/{path}文件列表: {files[:20]}")
                     for f in files:
                         if f.endswith('.traineddata'):
                             if path:
