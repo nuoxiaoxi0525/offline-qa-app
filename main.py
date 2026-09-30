@@ -470,50 +470,103 @@ class CameraScreen(Screen):
 
     def _init_camera(self, dt=None):
         try:
+            # 请求相机权限
             try:
                 from android.permissions import request_permissions, Permission
                 request_permissions([Permission.CAMERA])
-            except:
-                pass
-            # 延迟导入Camera，避免启动时崩溃
-            from kivy.uix.camera import Camera
-            self.camera = Camera(index=0, resolution=(1280, 720), play=False, allow_stretch=True)
-            from kivy.graphics import Rotate, PushMatrix, PopMatrix
-            with self.camera.canvas.before:
-                PushMatrix()
-                self.cam_rotate = Rotate(angle=-90, origin=self.camera.center)
-            with self.camera.canvas.after:
-                PopMatrix()
-            def update_origin(*args):
-                self.cam_rotate.origin = self.camera.center
-            self.camera.bind(center=update_origin)
-            self.overlay = Widget()
-            def update_frame(*args):
-                self.overlay.canvas.clear()
-                with self.overlay.canvas:
-                    Color(1, 1, 1, 0.7)
-                    w, h = self.overlay.size
-                    fw, fh = w * 0.85, h * 0.65
-                    fx, fy = (w - fw) / 2, (h - fh) / 2
-                    Line(rectangle=(fx, fy, fw, fh), width=2)
-                    Color(0.2, 0.7, 1, 1)
-                    cs = 20
-                    for cx, cy in [(fx, fy), (fx+fw, fy), (fx, fy+fh), (fx+fw, fy+fh)]:
-                        Rectangle(pos=(cx-cs/2, cy-cs/2), size=(cs, cs))
-            self.overlay.bind(size=update_frame, pos=update_frame)
-            self.camera_container.clear_widgets()
-            self.camera_container.add_widget(self.camera)
-            self.camera_container.add_widget(self.overlay)
-            self.camera.play = True
-            self.capture_btn.disabled = False
+            except Exception as e:
+                print(f'权限请求跳过: {e}')
+            # 延迟导入Camera
+            try:
+                from kivy.uix.camera import Camera
+            except Exception as e:
+                print(f'Camera导入失败: {e}')
+                self._show_camera_error(f'Camera组件导入失败: {str(e)[:50]}')
+                return
+            # 创建Camera组件（先不启动）
+            try:
+                self.camera = Camera(index=0, resolution=(640, 480), play=False, allow_stretch=True)
+            except Exception as e:
+                print(f'Camera创建失败: {e}')
+                traceback.print_exc()
+                self._show_camera_error(f'相机创建失败: {str(e)[:50]}')
+                return
+            # 添加旋转
+            try:
+                from kivy.graphics import Rotate, PushMatrix, PopMatrix
+                with self.camera.canvas.before:
+                    PushMatrix()
+                    self.cam_rotate = Rotate(angle=-90, origin=self.camera.center)
+                with self.camera.canvas.after:
+                    PopMatrix()
+                def update_origin(*args):
+                    self.cam_rotate.origin = self.camera.center
+                self.camera.bind(center=update_origin)
+            except Exception as e:
+                print(f'旋转设置失败: {e}')
+            # 添加取景框
+            try:
+                self.overlay = Widget()
+                def update_frame(*args):
+                    self.overlay.canvas.clear()
+                    with self.overlay.canvas:
+                        Color(1, 1, 1, 0.7)
+                        w, h = self.overlay.size
+                        fw, fh = w * 0.85, h * 0.65
+                        fx, fy = (w - fw) / 2, (h - fh) / 2
+                        Line(rectangle=(fx, fy, fw, fh), width=2)
+                        Color(0.2, 0.7, 1, 1)
+                        cs = 20
+                        for cx, cy in [(fx, fy), (fx+fw, fy), (fx, fy+fh), (fx+fw, fy+fh)]:
+                            Rectangle(pos=(cx-cs/2, cy-cs/2), size=(cs, cs))
+                self.overlay.bind(size=update_frame, pos=update_frame)
+            except Exception as e:
+                print(f'取景框设置失败: {e}')
+            # 显示相机
+            try:
+                self.camera_container.clear_widgets()
+                self.camera_container.add_widget(self.camera)
+                if hasattr(self, 'overlay'):
+                    self.camera_container.add_widget(self.overlay)
+            except Exception as e:
+                print(f'显示相机失败: {e}')
+            # 延迟启动相机
+            Clock.schedule_once(self._start_camera, 0.5)
         except Exception as e:
-            print(f'相机初始化失败: {e}')
+            print(f'相机初始化异常: {e}')
             traceback.print_exc()
-            self.camera_placeholder.text = '相机打开失败\n请使用相册选择图片'
+            self._show_camera_error(f'相机初始化异常: {str(e)[:50]}')
+
+    def _start_camera(self, dt=None):
+        """延迟启动相机，避免立即启动导致崩溃"""
+        try:
+            if self.camera:
+                self.camera.play = True
+                self.capture_btn.disabled = False
+                self.camera_placeholder.text = ''
+        except Exception as e:
+            print(f'相机启动失败: {e}')
+            traceback.print_exc()
+            self._show_camera_error(f'相机启动失败: {str(e)[:50]}')
+
+    def _show_camera_error(self, message):
+        """显示相机错误，不闪退"""
+        try:
+            self.camera_placeholder.text = message + '\n\n请点击下方"相册"按钮选择图片'
             self.capture_btn.disabled = True
+            # 确保相机容器显示占位符
+            self.camera_container.clear_widgets()
+            self.camera_container.add_widget(self.camera_placeholder)
+        except Exception as e:
+            print(f'显示错误失败: {e}')
 
     def on_enter(self):
-        Clock.schedule_once(self._init_camera, 0.1)
+        try:
+            Clock.schedule_once(self._init_camera, 0.1)
+        except Exception as e:
+            print(f'on_enter失败: {e}')
+            traceback.print_exc()
+            self._show_camera_error(f'页面初始化失败: {str(e)[:50]}')
 
     def on_leave(self):
         try:
