@@ -437,6 +437,7 @@ class CameraScreen(Screen):
         super().__init__(**kwargs)
         self.name = 'camera'
         self.camera = None
+        self.camera_container = None
         self._build_ui()
 
     def _build_ui(self):
@@ -449,103 +450,80 @@ class CameraScreen(Screen):
         title = Label(text='拍照搜题', font_size='18sp', font_name='ChineseFont', color=[1, 1, 1, 1])
         top_bar.add_widget(title)
         layout.add_widget(top_bar)
-        camera_container = BoxLayout(size_hint_y=0.75)
-        self.camera = Camera(index=0, resolution=(1280, 720), play=True, allow_stretch=True)
-        from kivy.graphics import Rotate, PushMatrix, PopMatrix
-        with self.camera.canvas.before:
-            PushMatrix()
-            self.cam_rotate = Rotate(angle=-90, origin=self.camera.center)
-        with self.camera.canvas.after:
-            PopMatrix()
-        def update_origin(*args):
-            self.cam_rotate.origin = self.camera.center
-        self.camera.bind(center=update_origin)
-        camera_container.add_widget(self.camera)
-        self.overlay = Widget()
-        camera_container.add_widget(self.overlay)
-        def update_frame(*args):
-            self.overlay.canvas.clear()
-            with self.overlay.canvas:
-                Color(1, 1, 1, 0.7)
-                w, h = self.overlay.size
-                fw, fh = w * 0.85, h * 0.65
-                fx, fy = (w - fw) / 2, (h - fh) / 2
-                Line(rectangle=(fx, fy, fw, fh), width=2)
-                Color(0.2, 0.7, 1, 1)
-                cs = 20
-                for cx, cy in [(fx, fy), (fx+fw, fy), (fx, fy+fh), (fx+fw, fy+fh)]:
-                    Rectangle(pos=(cx-cs/2, cy-cs/2), size=(cs, cs))
-        self.overlay.bind(size=update_frame, pos=update_frame)
-        layout.add_widget(camera_container)
+        self.camera_container = BoxLayout(size_hint_y=0.75)
+        self.camera_placeholder = Label(text='正在打开相机...', font_size='16sp', font_name='ChineseFont', color=[0.8, 0.8, 0.8, 1])
+        self.camera_container.add_widget(self.camera_placeholder)
+        layout.add_widget(self.camera_container)
         hint = Label(text='平行纸面，对准单个题目', font_size='14sp', size_hint_y=0.05, font_name='ChineseFont', color=[0.9, 0.9, 0.9, 1])
         layout.add_widget(hint)
         btn_layout = BoxLayout(orientation='horizontal', size_hint_y=0.12, padding=20, spacing=20)
         close_btn = Button(text='关闭', font_size='16sp', background_color=[0.5, 0.5, 0.5, 1], background_normal='', font_name='ChineseFont')
         close_btn.bind(on_press=self._on_close)
         btn_layout.add_widget(close_btn)
-        capture_btn = Button(text='拍照', font_size='20sp', background_color=[0.2, 0.6, 0.9, 1], background_normal='', font_name='ChineseFont')
-        capture_btn.bind(on_press=self._on_capture)
-        btn_layout.add_widget(capture_btn)
+        self.capture_btn = Button(text='拍照', font_size='20sp', background_color=[0.2, 0.6, 0.9, 1], background_normal='', font_name='ChineseFont', disabled=True)
+        self.capture_btn.bind(on_press=self._on_capture)
+        btn_layout.add_widget(self.capture_btn)
         album_btn = Button(text='相册', font_size='16sp', background_color=[0.6, 0.6, 0.6, 1], background_normal='', font_name='ChineseFont')
         album_btn.bind(on_press=self._on_album)
         btn_layout.add_widget(album_btn)
         layout.add_widget(btn_layout)
         self.add_widget(layout)
 
-    def on_enter(self):
-        if self.camera:
-            self.camera.play = True
+    def _init_camera(self, dt=None):
         try:
-            from android.permissions import request_permissions, Permission
-            request_permissions([Permission.CAMERA])
-        except:
-            pass
+            try:
+                from android.permissions import request_permissions, Permission
+                request_permissions([Permission.CAMERA])
+            except:
+                pass
+            self.camera = Camera(index=0, resolution=(1280, 720), play=False, allow_stretch=True)
+            from kivy.graphics import Rotate, PushMatrix, PopMatrix
+            with self.camera.canvas.before:
+                PushMatrix()
+                self.cam_rotate = Rotate(angle=-90, origin=self.camera.center)
+            with self.camera.canvas.after:
+                PopMatrix()
+            def update_origin(*args):
+                self.cam_rotate.origin = self.camera.center
+            self.camera.bind(center=update_origin)
+            self.overlay = Widget()
+            def update_frame(*args):
+                self.overlay.canvas.clear()
+                with self.overlay.canvas:
+                    Color(1, 1, 1, 0.7)
+                    w, h = self.overlay.size
+                    fw, fh = w * 0.85, h * 0.65
+                    fx, fy = (w - fw) / 2, (h - fh) / 2
+                    Line(rectangle=(fx, fy, fw, fh), width=2)
+                    Color(0.2, 0.7, 1, 1)
+                    cs = 20
+                    for cx, cy in [(fx, fy), (fx+fw, fy), (fx, fy+fh), (fx+fw, fy+fh)]:
+                        Rectangle(pos=(cx-cs/2, cy-cs/2), size=(cs, cs))
+            self.overlay.bind(size=update_frame, pos=update_frame)
+            self.camera_container.clear_widgets()
+            self.camera_container.add_widget(self.camera)
+            self.camera_container.add_widget(self.overlay)
+            self.camera.play = True
+            self.capture_btn.disabled = False
+        except Exception as e:
+            print(f'相机初始化失败: {e}')
+            traceback.print_exc()
+            self.camera_placeholder.text = '相机打开失败\n请使用相册选择图片'
+            self.capture_btn.disabled = True
+
+    def on_enter(self):
+        Clock.schedule_once(self._init_camera, 0.1)
 
     def on_leave(self):
-        if self.camera:
-            self.camera.play = False
-
-    def _on_close(self, instance):
-        self.manager.current = 'main'
-
-    def _on_capture(self, instance):
         try:
-            import numpy as np
-            from PIL import Image as PILImage
-            texture = self.camera.texture
-            if texture:
-                buf = texture.pixels
-                w, h = texture.size
-                arr = np.frombuffer(buf, dtype=np.uint8).reshape(h, w, 4)
-                img = PILImage.fromarray(arr[:, :, :3])
-                img = img.transpose(PILImage.FLIP_TOP_BOTTOM)
-                img = img.rotate(90, expand=True)
-                photo_dir = os.path.join(os.getcwd(), 'photos')
-                if not os.path.exists(photo_dir):
-                    os.makedirs(photo_dir)
-                photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
-                img.save(photo_path)
-                crop_screen = self.manager.get_screen('crop')
-                crop_screen.set_image(photo_path)
-                self.manager.current = 'crop'
+            if self.camera:
+                self.camera.play = False
+                self.camera_container.clear_widgets()
+                self.camera_container.add_widget(self.camera_placeholder)
+                self.camera = None
+                self.capture_btn.disabled = True
         except Exception as e:
-            print(f'拍照失败: {e}')
-            traceback.print_exc()
-
-    def _on_album(self, instance):
-        try:
-            popup = FileChooserPopup(on_select=self._on_album_select)
-            popup.title = '选择图片'
-            popup.open()
-        except Exception as e:
-            print(f'相册选择失败: {e}')
-
-    def _on_album_select(self, file_path):
-        if file_path.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
-            crop_screen = self.manager.get_screen('crop')
-            crop_screen.set_image(file_path)
-            self.manager.current = 'crop'
-
+            print(f'相机关闭失败: {e}')
 
 class CropScreen(Screen):
     def __init__(self, **kwargs):
