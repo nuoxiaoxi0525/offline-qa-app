@@ -17,7 +17,6 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import ScreenManager, Screen
-from kivy.uix.camera import Camera
 from kivy.uix.image import Image
 from kivy.uix.widget import Widget
 from kivy.clock import Clock
@@ -476,6 +475,8 @@ class CameraScreen(Screen):
                 request_permissions([Permission.CAMERA])
             except:
                 pass
+            # 延迟导入Camera，避免启动时崩溃
+            from kivy.uix.camera import Camera
             self.camera = Camera(index=0, resolution=(1280, 720), play=False, allow_stretch=True)
             from kivy.graphics import Rotate, PushMatrix, PopMatrix
             with self.camera.canvas.before:
@@ -733,13 +734,44 @@ class ResultScreen(Screen):
 
 class OfflineQAApp(App):
     def build(self):
-        Window.clearcolor = UI['bg_color']
-        sm = ScreenManager()
-        sm.add_widget(MainScreen(name='main'))
-        sm.add_widget(CameraScreen(name='camera'))
-        sm.add_widget(CropScreen(name='crop'))
-        sm.add_widget(ResultScreen(name='result'))
-        return sm
+        try:
+            Window.clearcolor = UI['bg_color']
+            sm = ScreenManager()
+            try:
+                sm.add_widget(MainScreen(name='main'))
+            except Exception as e:
+                print(f'MainScreen创建失败: {e}')
+                traceback.print_exc()
+                sm.add_widget(self._create_error_screen('主界面初始化失败', str(e)))
+            try:
+                sm.add_widget(CameraScreen(name='camera'))
+            except Exception as e:
+                print(f'CameraScreen创建失败: {e}')
+                traceback.print_exc()
+            try:
+                sm.add_widget(CropScreen(name='crop'))
+            except Exception as e:
+                print(f'CropScreen创建失败: {e}')
+                traceback.print_exc()
+            try:
+                sm.add_widget(ResultScreen(name='result'))
+            except Exception as e:
+                print(f'ResultScreen创建失败: {e}')
+                traceback.print_exc()
+            return sm
+        except Exception as e:
+            print(f'APP构建失败: {e}')
+            traceback.print_exc()
+            return self._create_error_screen('APP启动失败', str(e))
+
+    def _create_error_screen(self, title, message):
+        screen = Screen(name='error')
+        layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
+        layout.add_widget(Label(text=title, font_size='20sp', color=[1, 0, 0, 1]))
+        layout.add_widget(Label(text=message, font_size='14sp', color=[0.5, 0.5, 0.5, 1]))
+        layout.add_widget(Label(text='请检查错误日志', font_size='12sp', color=[0.5, 0.5, 0.5, 1]))
+        screen.add_widget(layout)
+        return screen
 
 
 if __name__ == '__main__':
@@ -748,3 +780,10 @@ if __name__ == '__main__':
     except Exception as e:
         print(f'APP运行错误: {e}')
         traceback.print_exc()
+        try:
+            log_path = os.path.join(BASE_DIR, "fatal_error.log")
+            with open(log_path, 'w', encoding='utf-8') as f:
+                f.write(f'Fatal Error: {e}\n')
+                f.write(traceback.format_exc())
+        except:
+            pass
