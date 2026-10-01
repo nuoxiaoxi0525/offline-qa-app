@@ -502,73 +502,98 @@ class CameraScreen(Screen):
         self.manager.current = 'main'
 
     def _on_capture(self, instance):
-        """使用Android系统相机拍照 - 完全避免Kivy Camera闪退"""
+        """使用Android系统相机拍照 - 不指定输出路径，拍照后查询最新照片"""
         try:
             from jnius import autoclass
             from android.permissions import request_permissions, Permission
 
             # 请求权限
             try:
-                request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE])
+                request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE])
             except:
                 pass
 
-            # 创建照片保存路径
-            import time
-            photo_dir = os.path.join(BASE_DIR, 'photos')
-            if not os.path.exists(photo_dir):
-                os.makedirs(photo_dir)
-            self.photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
+            # 记录拍照前最新照片的时间，用于后续查询
+            self._before_capture_time = int(time.time() * 1000)
 
-            # 使用Android系统相机Intent
+            # 使用Android系统相机Intent（不指定输出路径，最简单可靠）
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             Intent = autoclass('android.content.Intent')
-            Uri = autoclass('android.net.Uri')
-            File = autoclass('java.io.File')
             MediaStore = autoclass('android.provider.MediaStore')
 
             intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-            photo_file = File(self.photo_path)
-
-            # Android 7+ 需要使用FileProvider
-            try:
-                FileProvider = autoclass('android.support.v4.content.FileProvider')
-                Context = autoclass('android.content.Context')
-                authority = PythonActivity.mActivity.getPackageName() + '.fileprovider'
-                photo_uri = FileProvider.getUriForFile(PythonActivity.mActivity, authority, photo_file)
-                intent.putExtra(MediaStore.EXTRA_OUTPUT, photo_uri)
-                intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            except Exception as e:
-                print(f'FileProvider失败，使用旧方式: {e}')
-                photo_uri = Uri.fromFile(photo_file)
-                intent.putExtra(MediaStore.EXTRA_OUTPUT, photo_uri)
-
-            # 启动相机
             PythonActivity.mActivity.startActivityForResult(intent, 1001)
-            print(f'已启动系统相机，照片将保存到: {self.photo_path}')
+            print('已启动系统相机')
 
-            # 延迟检查照片是否已保存
-            Clock.schedule_once(self._check_photo, 2)
+            # 延迟检查最新照片
+            Clock.schedule_once(self._check_latest_photo, 3)
 
         except Exception as e:
             print(f'启动相机失败: {e}')
             traceback.print_exc()
-            # 显示错误提示，但不闪退
             self._show_error(f'启动相机失败: {str(e)[:60]}\n请使用相册选择图片')
 
-    def _check_photo(self, dt):
-        """检查照片是否已保存，如果保存了则进入裁剪界面"""
+    def _check_latest_photo(self, dt):
+        """查询系统相册中最新的照片并复制到APP目录"""
         try:
-            if self.photo_path and os.path.exists(self.photo_path) and os.path.getsize(self.photo_path) > 1000:
-                print(f'照片已保存: {self.photo_path}, 大小: {os.path.getsize(self.photo_path)}')
-                crop_screen = self.manager.get_screen('crop')
-                crop_screen.set_image(self.photo_path)
-                self.manager.current = 'crop'
-            else:
-                # 再等一会儿检查
-                Clock.schedule_once(self._check_photo, 2)
+            from jnius import autoclass
+
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            MediaStore = autoclass('android.provider.MediaStore')
+            Cursor = autoclass('android.database.Cursor')
+
+            content_resolver = PythonActivity.mActivity.getContentResolver()
+            uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+
+            # 查询最新照片
+            projection = [MediaStore.Images.Media.DATA, MediaStore.Images.Media.DATE_ADDED]
+            sort_order = MediaStore.Images.Media.DATE_ADDED + " DESC"
+            cursor = content_resolver.query(uri, projection, None, None, sort_order)
+
+            if cursor and cursor.moveToFirst():
+                # 获取照片路径
+                column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
+                photo_path = cursor.getString(column_index)
+                date_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
+                photo_date = cursor.getLong(date_index) * 1000  # 转为毫秒
+
+                cursor.close()
+
+                # 检查是否是拍照后的新照片（拍照后5分钟内）
+                current_time = int(time.time() * 1000)
+                if current_time - photo_date < 300000:  # 5分钟内
+                    print(f'找到最新照片: {photo_path}, 时间: {photo_date}')
+
+                    # 复制到APP私有目录
+                    import time
+                    photo_dir = os.path.join(BASE_DIR, 'photos')
+                    if not os.path.exists(photo_dir):
+                        os.makedirs(photo_dir)
+                    self.photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
+
+                    import shutil
+                    shutil.copy2(photo_path, self.photo_path)
+                    print(f'已复制到: {self.photo_path}')
+
+                    # 进入裁剪界面
+                    crop_screen = self.manager.get_screen('crop')
+                    crop_screen.set_image(self.photo_path)
+                    self.manager.current = 'crop'
+                    return
+
+            if cursor:
+                cursor.close()
+
+            # 没找到新照片，再等一会儿
+            print('未找到新照片，继续等待...')
+            Clock.schedule_once(self._check_latest_photo, 2)
+
         except Exception as e:
-            print(f'检查照片失败: {e}')
+            print(f'查询照片失败: {e}')
+            traceback.print_exc()
+            self._show_error(f'获取照片失败: {str(e)[:60]}\n请使用相册选择图片')
+
+
 
     def _show_error(self, message):
         """显示错误提示"""
