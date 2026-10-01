@@ -432,152 +432,168 @@ class MainScreen(Screen):
 
 
 class CameraScreen(Screen):
+    """拍照界面 - 使用Android系统相机，完全避免Kivy Camera闪退问题"""
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.name = 'camera'
-        self.camera = None
-        self.camera_container = None
+        self.photo_path = None
         self._build_ui()
 
     def _build_ui(self):
         layout = BoxLayout(orientation='vertical', padding=0, spacing=0)
         with layout.canvas.before:
-            Color(0.1, 0.1, 0.1, 1)
+            Color(0.15, 0.15, 0.2, 1)
             self.bg_rect = Rectangle(pos=layout.pos, size=layout.size)
-        layout.bind(pos=lambda *a: setattr(self.bg_rect, 'pos', layout.pos), size=lambda *a: setattr(self.bg_rect, 'size', layout.size))
+        layout.bind(pos=lambda *a: setattr(self.bg_rect, 'pos', layout.pos),
+                    size=lambda *a: setattr(self.bg_rect, 'size', layout.size))
+
+        # 顶部标题栏
         top_bar = BoxLayout(orientation='horizontal', size_hint_y=0.08, padding=10)
         title = Label(text='拍照搜题', font_size='18sp', font_name='ChineseFont', color=[1, 1, 1, 1])
         top_bar.add_widget(title)
         layout.add_widget(top_bar)
-        self.camera_container = BoxLayout(size_hint_y=0.75)
-        self.camera_placeholder = Label(text='正在打开相机...', font_size='16sp', font_name='ChineseFont', color=[0.8, 0.8, 0.8, 1])
-        self.camera_container.add_widget(self.camera_placeholder)
-        layout.add_widget(self.camera_container)
-        hint = Label(text='平行纸面，对准单个题目', font_size='14sp', size_hint_y=0.05, font_name='ChineseFont', color=[0.9, 0.9, 0.9, 1])
-        layout.add_widget(hint)
-        btn_layout = BoxLayout(orientation='horizontal', size_hint_y=0.12, padding=20, spacing=20)
-        close_btn = Button(text='关闭', font_size='16sp', background_color=[0.5, 0.5, 0.5, 1], background_normal='', font_name='ChineseFont')
+
+        # 中间提示区域
+        middle = BoxLayout(orientation='vertical', size_hint_y=0.7, padding=30, spacing=20)
+        middle.add_widget(Label(size_hint_y=0.1))  # 占位
+        icon_label = Label(text='[size=80sp]\U0001F4F7[/size]', markup=True, size_hint_y=0.3)
+        middle.add_widget(icon_label)
+        hint1 = Label(text='点击下方"拍照"按钮', font_size='18sp', font_name='ChineseFont', color=[1, 1, 1, 1], size_hint_y=0.1)
+        middle.add_widget(hint1)
+        hint2 = Label(text='将启动系统相机进行拍照', font_size='16sp', font_name='ChineseFont', color=[0.8, 0.8, 0.8, 1], size_hint_y=0.1)
+        middle.add_widget(hint2)
+        hint3 = Label(text='拍照完成后自动返回裁剪', font_size='14sp', font_name='ChineseFont', color=[0.7, 0.7, 0.7, 1], size_hint_y=0.1)
+        middle.add_widget(hint3)
+        middle.add_widget(Label(size_hint_y=0.2))  # 占位
+        layout.add_widget(middle)
+
+        # 底部按钮区域
+        btn_layout = BoxLayout(orientation='horizontal', size_hint_y=0.22, padding=20, spacing=20)
+        close_btn = Button(text='返回', font_size='16sp', background_color=[0.5, 0.5, 0.5, 1],
+                          background_normal='', font_name='ChineseFont')
         close_btn.bind(on_press=self._on_close)
         btn_layout.add_widget(close_btn)
-        self.capture_btn = Button(text='拍照', font_size='20sp', background_color=[0.2, 0.6, 0.9, 1], background_normal='', font_name='ChineseFont', disabled=True)
-        self.capture_btn.bind(on_press=self._on_capture)
-        btn_layout.add_widget(self.capture_btn)
-        album_btn = Button(text='相册', font_size='16sp', background_color=[0.6, 0.6, 0.6, 1], background_normal='', font_name='ChineseFont')
+
+        capture_btn = Button(text='拍照', font_size='22sp', background_color=[0.2, 0.6, 0.9, 1],
+                            background_normal='', font_name='ChineseFont')
+        capture_btn.bind(on_press=self._on_capture)
+        btn_layout.add_widget(capture_btn)
+
+        album_btn = Button(text='相册', font_size='16sp', background_color=[0.6, 0.5, 0.3, 1],
+                          background_normal='', font_name='ChineseFont')
         album_btn.bind(on_press=self._on_album)
         btn_layout.add_widget(album_btn)
         layout.add_widget(btn_layout)
+
         self.add_widget(layout)
 
-    def _init_camera(self, dt=None):
+    def on_enter(self):
+        """进入页面时请求相机权限"""
         try:
-            # 请求相机权限
-            try:
-                from android.permissions import request_permissions, Permission
-                request_permissions([Permission.CAMERA])
-            except Exception as e:
-                print(f'权限请求跳过: {e}')
-            # 延迟导入Camera
-            try:
-                from kivy.uix.camera import Camera
-            except Exception as e:
-                print(f'Camera导入失败: {e}')
-                self._show_camera_error(f'Camera组件导入失败: {str(e)[:50]}')
-                return
-            # 创建Camera组件（先不启动）
-            try:
-                self.camera = Camera(index=0, resolution=(640, 480), play=False, allow_stretch=True)
-            except Exception as e:
-                print(f'Camera创建失败: {e}')
-                traceback.print_exc()
-                self._show_camera_error(f'相机创建失败: {str(e)[:50]}')
-                return
-            # 添加旋转
-            try:
-                from kivy.graphics import Rotate, PushMatrix, PopMatrix
-                with self.camera.canvas.before:
-                    PushMatrix()
-                    self.cam_rotate = Rotate(angle=-90, origin=self.camera.center)
-                with self.camera.canvas.after:
-                    PopMatrix()
-                def update_origin(*args):
-                    self.cam_rotate.origin = self.camera.center
-                self.camera.bind(center=update_origin)
-            except Exception as e:
-                print(f'旋转设置失败: {e}')
-            # 添加取景框
-            try:
-                self.overlay = Widget()
-                def update_frame(*args):
-                    self.overlay.canvas.clear()
-                    with self.overlay.canvas:
-                        Color(1, 1, 1, 0.7)
-                        w, h = self.overlay.size
-                        fw, fh = w * 0.85, h * 0.65
-                        fx, fy = (w - fw) / 2, (h - fh) / 2
-                        Line(rectangle=(fx, fy, fw, fh), width=2)
-                        Color(0.2, 0.7, 1, 1)
-                        cs = 20
-                        for cx, cy in [(fx, fy), (fx+fw, fy), (fx, fy+fh), (fx+fw, fy+fh)]:
-                            Rectangle(pos=(cx-cs/2, cy-cs/2), size=(cs, cs))
-                self.overlay.bind(size=update_frame, pos=update_frame)
-            except Exception as e:
-                print(f'取景框设置失败: {e}')
-            # 显示相机
-            try:
-                self.camera_container.clear_widgets()
-                self.camera_container.add_widget(self.camera)
-                if hasattr(self, 'overlay'):
-                    self.camera_container.add_widget(self.overlay)
-            except Exception as e:
-                print(f'显示相机失败: {e}')
-            # 延迟启动相机
-            Clock.schedule_once(self._start_camera, 0.5)
+            from android.permissions import request_permissions, Permission
+            request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE])
         except Exception as e:
-            print(f'相机初始化异常: {e}')
-            traceback.print_exc()
-            self._show_camera_error(f'相机初始化异常: {str(e)[:50]}')
+            print(f'权限请求跳过: {e}')
 
-    def _start_camera(self, dt=None):
-        """延迟启动相机，避免立即启动导致崩溃"""
+    def on_leave(self):
+        pass
+
+    def _on_close(self, instance):
+        self.manager.current = 'main'
+
+    def _on_capture(self, instance):
+        """使用Android系统相机拍照 - 完全避免Kivy Camera闪退"""
         try:
-            if self.camera:
-                self.camera.play = True
-                self.capture_btn.disabled = False
-                self.camera_placeholder.text = ''
+            from jnius import autoclass
+            from android.permissions import request_permissions, Permission
+
+            # 请求权限
+            try:
+                request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE])
+            except:
+                pass
+
+            # 创建照片保存路径
+            import time
+            photo_dir = os.path.join(BASE_DIR, 'photos')
+            if not os.path.exists(photo_dir):
+                os.makedirs(photo_dir)
+            self.photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
+
+            # 使用Android系统相机Intent
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Intent = autoclass('android.content.Intent')
+            Uri = autoclass('android.net.Uri')
+            File = autoclass('java.io.File')
+            MediaStore = autoclass('android.provider.MediaStore')
+
+            intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            photo_file = File(self.photo_path)
+
+            # Android 7+ 需要使用FileProvider
+            try:
+                FileProvider = autoclass('android.support.v4.content.FileProvider')
+                Context = autoclass('android.content.Context')
+                authority = PythonActivity.mActivity.getPackageName() + '.fileprovider'
+                photo_uri = FileProvider.getUriForFile(PythonActivity.mActivity, authority, photo_file)
+                intent.putExtra(MediaStore.EXTRA_OUTPUT, photo_uri)
+                intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            except Exception as e:
+                print(f'FileProvider失败，使用旧方式: {e}')
+                photo_uri = Uri.fromFile(photo_file)
+                intent.putExtra(MediaStore.EXTRA_OUTPUT, photo_uri)
+
+            # 启动相机
+            PythonActivity.mActivity.startActivityForResult(intent, 1001)
+            print(f'已启动系统相机，照片将保存到: {self.photo_path}')
+
+            # 延迟检查照片是否已保存
+            Clock.schedule_once(self._check_photo, 2)
+
         except Exception as e:
-            print(f'相机启动失败: {e}')
+            print(f'启动相机失败: {e}')
             traceback.print_exc()
-            self._show_camera_error(f'相机启动失败: {str(e)[:50]}')
+            # 显示错误提示，但不闪退
+            self._show_error(f'启动相机失败: {str(e)[:60]}\n请使用相册选择图片')
 
-    def _show_camera_error(self, message):
-        """显示相机错误，不闪退"""
+    def _check_photo(self, dt):
+        """检查照片是否已保存，如果保存了则进入裁剪界面"""
         try:
-            self.camera_placeholder.text = message + '\n\n请点击下方"相册"按钮选择图片'
-            self.capture_btn.disabled = True
-            # 确保相机容器显示占位符
-            self.camera_container.clear_widgets()
-            self.camera_container.add_widget(self.camera_placeholder)
+            if self.photo_path and os.path.exists(self.photo_path) and os.path.getsize(self.photo_path) > 1000:
+                print(f'照片已保存: {self.photo_path}, 大小: {os.path.getsize(self.photo_path)}')
+                crop_screen = self.manager.get_screen('crop')
+                crop_screen.set_image(self.photo_path)
+                self.manager.current = 'crop'
+            else:
+                # 再等一会儿检查
+                Clock.schedule_once(self._check_photo, 2)
+        except Exception as e:
+            print(f'检查照片失败: {e}')
+
+    def _show_error(self, message):
+        """显示错误提示"""
+        try:
+            popup = Popup(title='提示', content=Label(text=message, font_name='ChineseFont'),
+                         size_hint=(0.8, 0.4))
+            popup.open()
         except Exception as e:
             print(f'显示错误失败: {e}')
 
-    def on_enter(self):
+    def _on_album(self, instance):
+        """从相册选择图片"""
         try:
-            Clock.schedule_once(self._init_camera, 0.1)
+            popup = FileChooserPopup(on_select=self._on_album_select)
+            popup.title = '选择图片'
+            popup.open()
         except Exception as e:
-            print(f'on_enter失败: {e}')
-            traceback.print_exc()
-            self._show_camera_error(f'页面初始化失败: {str(e)[:50]}')
+            print(f'相册选择失败: {e}')
+            self._show_error(f'打开相册失败: {str(e)[:60]}')
 
-    def on_leave(self):
-        try:
-            if self.camera:
-                self.camera.play = False
-                self.camera_container.clear_widgets()
-                self.camera_container.add_widget(self.camera_placeholder)
-                self.camera = None
-                self.capture_btn.disabled = True
-        except Exception as e:
-            print(f'相机关闭失败: {e}')
+    def _on_album_select(self, file_path):
+        if file_path.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
+            crop_screen = self.manager.get_screen('crop')
+            crop_screen.set_image(file_path)
+            self.manager.current = 'crop'
 
 class CropScreen(Screen):
     def __init__(self, **kwargs):
