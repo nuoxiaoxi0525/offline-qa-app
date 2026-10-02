@@ -506,35 +506,59 @@ class CameraScreen(Screen):
         self.manager.current = 'main'
 
     def _on_capture(self, instance):
-        """使用Android系统相机拍照 - 启动前记录最新照片时间，拍照后找更新的照片"""
+        """使用Android系统相机拍照 - 指定输出路径到APP私有目录"""
         try:
             from jnius import autoclass
             from android.permissions import request_permissions, Permission
 
             # 请求权限
             try:
-                request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE, Permission.MANAGE_EXTERNAL_STORAGE])
+                request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE])
             except:
                 pass
 
-            # 启动相机前，先查询并记录当前最新照片的时间戳
-            self._before_photo_time = 0
+            # 创建照片保存路径（APP私有目录，一定可以访问）
+            photo_dir = os.path.join(BASE_DIR, 'photos')
+            if not os.path.exists(photo_dir):
+                os.makedirs(photo_dir)
+            self._output_path = os.path.join(photo_dir, f'capture_{int(time.time())}.jpg')
+            print(f'照片输出路径: {self._output_path}')
+
+            # 启动系统相机，指定输出路径
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Intent = autoclass('android.content.Intent')
+            Uri = autoclass('android.net.Uri')
+            MediaStore = autoclass('android.provider.MediaStore')
+
+            intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+
+            # 用file://方式创建Uri，避免jnius类型问题
+            output_uri = Uri.parse("file://" + self._output_path)
+            print(f'输出Uri: {output_uri}')
+
+            # 尝试指定输出路径
             try:
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                Uri = autoclass('android.net.Uri')
-                uri = Uri.parse("content://media/external/images/media")
-                content_resolver = PythonActivity.mActivity.getContentResolver()
-                cursor = content_resolver.query(uri, ["date_added"], None, None, "date_added DESC")
-                if cursor and cursor.moveToFirst():
-                    self._before_photo_time = cursor.getLong(0)
-                    cursor.close()
-                print(f'启动相机前最新照片时间: {self._before_photo_time}')
+                intent.putExtra(MediaStore.EXTRA_OUTPUT, output_uri)
+                print('已指定输出路径')
             except Exception as e:
-                print(f'查询启动前照片时间失败: {e}')
+                print(f'指定输出路径失败: {e}')
+                # 如果失败，就不指定输出路径，拍照后再扫描
+
+            # 启动相机
+            PythonActivity.mActivity.startActivityForResult(intent, 1001)
+            print('系统相机已启动')
 
             # 记录拍照时间和重置检查计数
             self._capture_time = time.time()
             self._check_count = 0
+
+            # 延迟后开始检查照片
+            Clock.schedule_once(self._check_captured_photo, 3)
+
+        except Exception as e:
+            print(f'启动相机失败: {e}')
+            traceback.print_exc()
+            self._show_error(f'启动相机失败: {str(e)[:60]}')
 
             # 使用Android系统相机Intent（不指定输出路径，最简单可靠）
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
@@ -553,16 +577,33 @@ class CameraScreen(Screen):
             traceback.print_exc()
             self._show_error(f'启动相机失败: {str(e)[:60]}\n请使用相册选择图片')
 
-    def _check_latest_photo(self, dt):
-        """通过MediaStore查询最新照片，用ContentResolver复制（不直接访问文件路径）"""
+    def _check_captured_photo(self, dt):
+        """检查指定输出路径的照片是否已保存"""
         try:
-            if not hasattr(self, '_before_photo_time'):
-                self._before_photo_time = 0
+            # 方法1：检查指定的输出路径
+            if hasattr(self, '_output_path') and os.path.exists(self._output_path):
+                file_size = os.path.getsize(self._output_path)
+                print(f'找到指定路径的照片: {self._output_path}, 大小: {file_size}')
 
-            photo_uri = None
-            photo_id = None
+                if file_size > 0:
+                    # 等待文件写入完成
+                    time.sleep(1)
+                    file_size2 = os.path.getsize(self._output_path)
+                    if file_size != file_size2:
+                        print('文件还在写入中，等待...')
+                        time.sleep(2)
 
-            # 方法1：通过MediaStore查询最新照片的Uri
+                    self.photo_path = self._output_path
+                    print(f'使用照片: {self.photo_path}')
+
+                    # 进入裁剪界面
+                    crop_screen = self.manager.get_screen('crop')
+                    crop_screen.set_image(self.photo_path)
+                    self.manager.current = 'crop'
+                    return
+
+            # 方法2：如果指定路径没有，通过MediaStore查询
+            print('指定路径无照片，尝试MediaStore查询...')
             try:
                 from jnius import autoclass
 
@@ -573,69 +614,28 @@ class CameraScreen(Screen):
                 base_uri = Uri.parse("content://media/external/images/media")
                 content_resolver = PythonActivity.mActivity.getContentResolver()
 
-                # 查询最新照片，按date_added降序，只取前5张
-                cursor = content_resolver.query(base_uri, ["_id", "date_added"], None, None, "date_added DESC LIMIT 5")
+                # 查询最新照片
+                cursor = content_resolver.query(base_uri, ["_id", "_data", "date_added"], None, None, "date_added DESC LIMIT 1")
 
                 if cursor and cursor.moveToFirst():
-                    while not cursor.isAfterLast():
-                        try:
-                            p_id = cursor.getLong(0)
-                            p_date = cursor.getLong(1)
-                            print(f'  照片ID: {p_id}, date_added: {p_date}, before: {self._before_photo_time}')
-
-                            # 找到比启动相机前更新的照片
-                            if p_date > self._before_photo_time:
-                                photo_id = p_id
-                                print(f'  找到新照片! ID={p_id}, date_added={p_date} > before={self._before_photo_time}')
-                                break
-                        except Exception as e:
-                            print(f'  读取照片信息失败: {e}')
-
-                        if not cursor.moveToNext():
-                            break
-
+                    photo_id = cursor.getLong(0)
+                    photo_data = cursor.getString(1)
+                    photo_date = cursor.getLong(2)
                     cursor.close()
 
-                    # 如果没找到比before更新的，就用最新的那张（兜底）
-                    if not photo_id:
-                        cursor = content_resolver.query(base_uri, ["_id", "date_added"], None, None, "date_added DESC LIMIT 1")
-                        if cursor and cursor.moveToFirst():
-                            photo_id = cursor.getLong(0)
-                            cursor.close()
-                            print(f'未找到比before更新的照片，使用最新照片ID: {photo_id}')
-                else:
-                    if cursor:
-                        cursor.close()
-                    print('MediaStore查询结果为空')
+                    print(f'MediaStore最新照片: ID={photo_id}, path={photo_data}, date={photo_date}')
 
-                # 构建照片Uri
-                if photo_id:
+                    # 构建Uri并通过ContentResolver复制
                     photo_uri = ContentUris.withAppendedId(base_uri, photo_id)
-                    print(f'照片Uri: {photo_uri}')
-
-            except Exception as e:
-                print(f'MediaStore查询失败: {e}')
-                traceback.print_exc()
-
-            # 如果找到照片Uri，通过ContentResolver复制到APP目录
-            if photo_uri:
-                try:
-                    from jnius import autoclass
-                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                    InputStream = autoclass('java.io.InputStream')
-                    FileOutputStream = autoclass('java.io.FileOutputStream')
-                    BufferedInputStream = autoclass('java.io.BufferedInputStream')
-                    ByteArrayOutputStream = autoclass('java.io.ByteArrayOutputStream')
-
-                    content_resolver = PythonActivity.mActivity.getContentResolver()
-
-                    # 打开InputStream
                     input_stream = content_resolver.openInputStream(photo_uri)
+
                     if input_stream:
-                        # 读取到字节数组
+                        from jnius import autoclass
+                        BufferedInputStream = autoclass('java.io.BufferedInputStream')
+                        ByteArrayOutputStream = autoclass('java.io.ByteArrayOutputStream')
+
                         buffered_stream = BufferedInputStream(input_stream)
                         byte_array_stream = ByteArrayOutputStream()
-
                         buffer = [0] * 8192
                         while True:
                             read = buffered_stream.read(buffer)
@@ -654,33 +654,26 @@ class CameraScreen(Screen):
                             os.makedirs(photo_dir)
                         self.photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
 
-                        # 用Python写入文件
                         with open(self.photo_path, 'wb') as f:
                             f.write(photo_bytes)
 
-                        print(f'已通过ContentResolver复制到: {self.photo_path}, 大小: {len(photo_bytes)} 字节')
+                        print(f'已通过ContentResolver复制: {self.photo_path}, 大小: {len(photo_bytes)}')
 
-                        # 进入裁剪界面
                         crop_screen = self.manager.get_screen('crop')
                         crop_screen.set_image(self.photo_path)
                         self.manager.current = 'crop'
                         return
-                    else:
-                        print('无法打开InputStream')
+            except Exception as e:
+                print(f'MediaStore查询失败: {e}')
+                traceback.print_exc()
 
-                except Exception as e:
-                    print(f'通过ContentResolver复制失败: {e}')
-                    traceback.print_exc()
-
-            # 方法2：回退到文件系统扫描
+            # 方法3：回退到文件系统扫描
             print('回退到文件系统扫描...')
             scan_dirs = [
                 '/sdcard/DCIM/Camera',
                 '/sdcard/DCIM',
                 '/storage/emulated/0/DCIM/Camera',
                 '/storage/emulated/0/DCIM',
-                '/sdcard/Pictures',
-                '/storage/emulated/0/Pictures',
             ]
 
             latest_file = None
@@ -689,9 +682,7 @@ class CameraScreen(Screen):
             for scan_dir in scan_dirs:
                 try:
                     if os.path.exists(scan_dir):
-                        files = os.listdir(scan_dir)
-                        print(f'  目录 {scan_dir} 有 {len(files)} 个文件')
-                        for filename in files:
+                        for filename in os.listdir(scan_dir):
                             if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
                                 filepath = os.path.join(scan_dir, filename)
                                 try:
@@ -703,52 +694,44 @@ class CameraScreen(Screen):
                                     pass
                         if latest_file:
                             break
-                except Exception as e:
-                    print(f'  扫描目录{scan_dir}失败: {e}')
+                except:
                     continue
 
             if latest_file and os.path.exists(latest_file):
-                print(f'文件系统扫描找到: {latest_file}')
-
-                # 复制到APP私有目录
+                print(f'文件系统找到: {latest_file}')
+                import shutil
                 photo_dir = os.path.join(BASE_DIR, 'photos')
                 if not os.path.exists(photo_dir):
                     os.makedirs(photo_dir)
                 self.photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
-
-                import shutil
                 try:
                     shutil.copy2(latest_file, self.photo_path)
-                    print(f'已复制到: {self.photo_path}, 大小: {os.path.getsize(self.photo_path)}')
-
-                    # 进入裁剪界面
                     crop_screen = self.manager.get_screen('crop')
                     crop_screen.set_image(self.photo_path)
                     self.manager.current = 'crop'
                     return
-                except Exception as e:
-                    print(f'复制文件失败: {e}')
+                except:
+                    pass
 
-            # 没找到新照片，再等一会儿（最多等60秒）
+            # 没找到，继续等待（最多等60秒）
             if not hasattr(self, '_check_count'):
                 self._check_count = 0
             self._check_count += 1
 
             if self._check_count < 30:
-                print(f'未找到新照片，继续等待... (第{self._check_count}次)')
+                print(f'未找到照片，继续等待... (第{self._check_count}次)')
                 if hasattr(self, 'status_label'):
                     self.status_label.text = f'正在查找照片... ({self._check_count}/30)'
-                Clock.schedule_once(self._check_latest_photo, 2)
+                Clock.schedule_once(self._check_captured_photo, 2)
             else:
-                print('超时未找到新照片')
+                print('超时未找到照片')
                 self._check_count = 0
-                self._capture_time = None
-                self._show_error('未找到新拍摄的照片\n请使用相册选择图片\n\n请确保已授予存储权限')
+                self._show_error('未找到拍摄的照片\n请使用相册选择图片')
 
         except Exception as e:
-            print(f'查找照片失败: {e}')
+            print(f'检查照片失败: {e}')
             traceback.print_exc()
-            self._show_error(f'获取照片失败: {str(e)[:60]}\n请使用相册选择图片')
+            self._show_error(f'获取照片失败: {str(e)[:60]}')
 
 
 
