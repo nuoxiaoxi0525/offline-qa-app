@@ -506,7 +506,7 @@ class CameraScreen(Screen):
         self.manager.current = 'main'
 
     def _on_capture(self, instance):
-        """使用Android系统相机拍照 - 不指定输出路径，拍照后扫描最新照片"""
+        """使用Android系统相机拍照 - 启动前记录最新照片时间，拍照后找更新的照片"""
         try:
             from jnius import autoclass
             from android.permissions import request_permissions, Permission
@@ -516,6 +516,21 @@ class CameraScreen(Screen):
                 request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE, Permission.MANAGE_EXTERNAL_STORAGE])
             except:
                 pass
+
+            # 启动相机前，先查询并记录当前最新照片的时间戳
+            self._before_photo_time = 0
+            try:
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                Uri = autoclass('android.net.Uri')
+                uri = Uri.parse("content://media/external/images/media")
+                content_resolver = PythonActivity.mActivity.getContentResolver()
+                cursor = content_resolver.query(uri, ["date_added"], None, None, "date_added DESC")
+                if cursor and cursor.moveToFirst():
+                    self._before_photo_time = cursor.getLong(0)
+                    cursor.close()
+                print(f'启动相机前最新照片时间: {self._before_photo_time}')
+            except Exception as e:
+                print(f'查询启动前照片时间失败: {e}')
 
             # 记录拍照时间和重置检查计数
             self._capture_time = time.time()
@@ -539,49 +554,56 @@ class CameraScreen(Screen):
             self._show_error(f'启动相机失败: {str(e)[:60]}\n请使用相册选择图片')
 
     def _check_latest_photo(self, dt):
-        """通过MediaStore查询最新照片（用字符串避免jnius嵌套类问题）"""
+        """通过MediaStore查询比启动相机前更新的照片"""
         try:
-            # 记录拍照时间
-            if not hasattr(self, '_capture_time'):
-                self._capture_time = time.time()
+            if not hasattr(self, '_before_photo_time'):
+                self._before_photo_time = 0
 
             photo_path = None
+            photo_date = 0
 
-            # 方法1：通过MediaStore查询（最可靠，不受分区存储限制）
+            # 方法1：通过MediaStore查询（最可靠）
             try:
                 from jnius import autoclass
 
                 PythonActivity = autoclass('org.kivy.android.PythonActivity')
                 Uri = autoclass('android.net.Uri')
-
-                # 用字符串创建Uri，避免jnius访问MediaStore嵌套类
                 uri = Uri.parse("content://media/external/images/media")
-
                 content_resolver = PythonActivity.mActivity.getContentResolver()
 
-                # 查询最新照片，按date_added降序
-                # 用字符串 "_data" 和 "date_added" 避免嵌套类访问
-                projection = ["_data", "date_added"]
-                sort_order = "date_added DESC"
-                cursor = content_resolver.query(uri, projection, None, None, sort_order)
+                # 查询所有照片，按date_added降序
+                cursor = content_resolver.query(uri, ["_data", "date_added"], None, None, "date_added DESC")
 
                 if cursor and cursor.moveToFirst():
-                    # 获取照片路径（用字符串列名）
-                    data_index = cursor.getColumnIndex("_data")
-                    date_index = cursor.getColumnIndex("date_added")
+                    # 遍历找到比启动相机前更新的照片
+                    while not cursor.isAfterLast():
+                        try:
+                            p_path = cursor.getString(0)
+                            p_date = cursor.getLong(1)
+                            print(f'  照片: {p_path}, date_added: {p_date}, before: {self._before_photo_time}')
 
-                    photo_path = cursor.getString(data_index)
-                    photo_date = cursor.getLong(date_index) * 1000  # 转为毫秒
+                            # 如果这张照片比启动相机前的最新照片还新，就是刚拍的
+                            if p_date > self._before_photo_time:
+                                photo_path = p_path
+                                photo_date = p_date
+                                print(f'  找到新照片! date_added={p_date} > before={self._before_photo_time}')
+                                break
+                        except Exception as e:
+                            print(f'  读取照片信息失败: {e}')
+
+                        if not cursor.moveToNext():
+                            break
 
                     cursor.close()
 
-                    print(f'MediaStore查询到最新照片: {photo_path}, 时间戳: {photo_date}')
-
-                    # 检查是否是拍照后的新照片（10分钟内）
-                    current_time_ms = int(time.time() * 1000)
-                    if current_time_ms - photo_date > 600000:  # 超过10分钟
-                        print('照片不是最新拍摄的，继续等待...')
-                        photo_path = None
+                    # 如果没找到比before更新的，就用最新的那张（兜底）
+                    if not photo_path:
+                        cursor = content_resolver.query(uri, ["_data", "date_added"], None, None, "date_added DESC")
+                        if cursor and cursor.moveToFirst():
+                            photo_path = cursor.getString(0)
+                            photo_date = cursor.getLong(1)
+                            cursor.close()
+                            print(f'未找到比before更新的照片，使用最新照片: {photo_path}, date: {photo_date}')
                 else:
                     if cursor:
                         cursor.close()
@@ -609,7 +631,9 @@ class CameraScreen(Screen):
                 for scan_dir in scan_dirs:
                     try:
                         if os.path.exists(scan_dir):
-                            for filename in os.listdir(scan_dir):
+                            files = os.listdir(scan_dir)
+                            print(f'  目录 {scan_dir} 有 {len(files)} 个文件')
+                            for filename in files:
                                 if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
                                     filepath = os.path.join(scan_dir, filename)
                                     try:
@@ -622,12 +646,12 @@ class CameraScreen(Screen):
                             if latest_file:
                                 break
                     except Exception as e:
-                        print(f'扫描目录{scan_dir}失败: {e}')
+                        print(f'  扫描目录{scan_dir}失败: {e}')
                         continue
 
-                if latest_file and latest_time >= self._capture_time - 10:
+                if latest_file:
                     photo_path = latest_file
-                    print(f'文件系统扫描找到: {photo_path}')
+                    print(f'文件系统扫描找到: {photo_path}, mtime: {latest_time}')
 
             # 如果找到照片，复制到APP目录并进入裁剪
             if photo_path and os.path.exists(photo_path):
@@ -659,13 +683,15 @@ class CameraScreen(Screen):
                 crop_screen.set_image(self.photo_path)
                 self.manager.current = 'crop'
                 return
+            else:
+                print('未找到任何照片文件')
 
             # 没找到新照片，再等一会儿（最多等60秒）
             if not hasattr(self, '_check_count'):
                 self._check_count = 0
             self._check_count += 1
 
-            if self._check_count < 30:  # 最多等60秒
+            if self._check_count < 30:
                 print(f'未找到新照片，继续等待... (第{self._check_count}次)')
                 if hasattr(self, 'status_label'):
                     self.status_label.text = f'正在查找照片... ({self._check_count}/30)'
