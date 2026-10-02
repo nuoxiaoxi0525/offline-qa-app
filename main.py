@@ -453,18 +453,16 @@ class CameraScreen(Screen):
         top_bar.add_widget(title)
         layout.add_widget(top_bar)
 
-        # 中间提示区域
+        # 中间状态区域
         middle = BoxLayout(orientation='vertical', size_hint_y=0.7, padding=30, spacing=20)
-        middle.add_widget(Label(size_hint_y=0.1))  # 占位
+        middle.add_widget(Label(size_hint_y=0.1))
         icon_label = Label(text='[size=80sp]\U0001F4F7[/size]', markup=True, size_hint_y=0.3)
         middle.add_widget(icon_label)
-        hint1 = Label(text='点击下方"拍照"按钮', font_size='18sp', font_name='ChineseFont', color=[1, 1, 1, 1], size_hint_y=0.1)
-        middle.add_widget(hint1)
-        hint2 = Label(text='将启动系统相机进行拍照', font_size='16sp', font_name='ChineseFont', color=[0.8, 0.8, 0.8, 1], size_hint_y=0.1)
+        self.status_label = Label(text='正在启动相机...', font_size='18sp', font_name='ChineseFont', color=[1, 1, 1, 1], size_hint_y=0.1)
+        middle.add_widget(self.status_label)
+        hint2 = Label(text='拍照完成后自动返回裁剪', font_size='14sp', font_name='ChineseFont', color=[0.7, 0.7, 0.7, 1], size_hint_y=0.1)
         middle.add_widget(hint2)
-        hint3 = Label(text='拍照完成后自动返回裁剪', font_size='14sp', font_name='ChineseFont', color=[0.7, 0.7, 0.7, 1], size_hint_y=0.1)
-        middle.add_widget(hint3)
-        middle.add_widget(Label(size_hint_y=0.2))  # 占位
+        middle.add_widget(Label(size_hint_y=0.2))
         layout.add_widget(middle)
 
         # 底部按钮区域
@@ -474,10 +472,10 @@ class CameraScreen(Screen):
         close_btn.bind(on_press=self._on_close)
         btn_layout.add_widget(close_btn)
 
-        capture_btn = Button(text='拍照', font_size='22sp', background_color=[0.2, 0.6, 0.9, 1],
-                            background_normal='', font_name='ChineseFont')
-        capture_btn.bind(on_press=self._on_capture)
-        btn_layout.add_widget(capture_btn)
+        recapture_btn = Button(text='重新拍照', font_size='18sp', background_color=[0.2, 0.6, 0.9, 1],
+                             background_normal='', font_name='ChineseFont')
+        recapture_btn.bind(on_press=self._on_capture)
+        btn_layout.add_widget(recapture_btn)
 
         album_btn = Button(text='相册', font_size='16sp', background_color=[0.6, 0.5, 0.3, 1],
                           background_normal='', font_name='ChineseFont')
@@ -488,12 +486,18 @@ class CameraScreen(Screen):
         self.add_widget(layout)
 
     def on_enter(self):
-        """进入页面时请求相机权限"""
+        """进入页面时直接启动系统相机"""
         try:
             from android.permissions import request_permissions, Permission
-            request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE])
+            request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE, Permission.MANAGE_EXTERNAL_STORAGE])
         except Exception as e:
             print(f'权限请求跳过: {e}')
+        # 延迟0.5秒后自动启动相机
+        Clock.schedule_once(self._auto_start_camera, 0.5)
+
+    def _auto_start_camera(self, dt=None):
+        """自动启动系统相机"""
+        self._on_capture(None)
 
     def on_leave(self):
         pass
@@ -535,56 +539,54 @@ class CameraScreen(Screen):
             self._show_error(f'启动相机失败: {str(e)[:60]}\n请使用相册选择图片')
 
     def _check_latest_photo(self, dt):
-        """扫描相机目录找到最新照片并复制到APP目录"""
+        """扫描整个存储找到最新照片并复制到APP目录"""
         try:
             # 记录拍照时间
             if not hasattr(self, '_capture_time'):
                 self._capture_time = time.time()
 
-            # 可能的相机照片目录（包含iQOO/vivo特有的路径）
-            camera_dirs = [
-                '/sdcard/DCIM/Camera',
-                '/sdcard/DCIM/',
-                '/sdcard/DCIM/Screenshots',
-                '/storage/emulated/0/DCIM/Camera',
-                '/storage/emulated/0/DCIM/',
-                '/storage/emulated/0/DCIM/Screenshots',
-                '/sdcard/Pictures/',
-                '/storage/emulated/0/Pictures/',
-                '/sdcard/Pictures/Camera',
-                '/storage/emulated/0/Pictures/Camera',
-                '/sdcard/DCIM/VivoCamera',
-                '/storage/emulated/0/DCIM/VivoCamera',
-                '/sdcard/DCIM/iQOO',
-                '/storage/emulated/0/DCIM/iQOO',
+            # 广泛扫描目录
+            scan_dirs = [
+                '/sdcard/DCIM',
+                '/sdcard/Pictures',
+                '/sdcard/Photos',
+                '/storage/emulated/0/DCIM',
+                '/storage/emulated/0/Pictures',
+                '/storage/emulated/0/Photos',
+                '/sdcard',
             ]
 
             latest_file = None
             latest_time = 0
-            found_dirs = []
+            scanned_count = 0
 
-            # 扫描所有可能的目录
-            for camera_dir in camera_dirs:
+            # 递归扫描目录
+            for scan_dir in scan_dirs:
                 try:
-                    if os.path.exists(camera_dir):
-                        found_dirs.append(camera_dir)
-                        files = os.listdir(camera_dir)
-                        print(f'目录 {camera_dir} 有 {len(files)} 个文件')
-                        for filename in files:
-                            if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-                                filepath = os.path.join(camera_dir, filename)
-                                try:
-                                    mtime = os.path.getmtime(filepath)
-                                    if mtime > latest_time:
-                                        latest_time = mtime
-                                        latest_file = filepath
-                                except:
-                                    pass
+                    if os.path.exists(scan_dir):
+                        for root, dirs, files in os.walk(scan_dir):
+                            # 跳过某些目录
+                            if any(skip in root for skip in ['.thumbnails', 'cache', 'Cache', '.git']):
+                                continue
+                            for filename in files:
+                                if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                                    filepath = os.path.join(root, filename)
+                                    try:
+                                        mtime = os.path.getmtime(filepath)
+                                        scanned_count += 1
+                                        if mtime > latest_time:
+                                            latest_time = mtime
+                                            latest_file = filepath
+                                    except:
+                                        pass
+                            # 限制扫描深度，避免扫描太久
+                            if root.count(os.sep) - scan_dir.count(os.sep) > 3:
+                                dirs.clear()
                 except Exception as e:
-                    print(f'扫描目录{camera_dir}失败: {e}')
+                    print(f'扫描目录{scan_dir}失败: {e}')
                     continue
 
-            print(f'找到的目录: {found_dirs}')
+            print(f'共扫描 {scanned_count} 个图片文件')
             print(f'最新照片: {latest_file}, 时间: {latest_time}')
             print(f'拍照时间: {self._capture_time}, 当前时间: {time.time()}')
 
@@ -620,19 +622,19 @@ class CameraScreen(Screen):
                 self.manager.current = 'crop'
                 return
 
-            # 没找到新照片，再等一会儿（最多等60秒）
+            # 没找到新照片，再等一会儿（最多等90秒）
             if not hasattr(self, '_check_count'):
                 self._check_count = 0
             self._check_count += 1
 
-            if self._check_count < 30:  # 最多等60秒
+            if self._check_count < 45:  # 最多等90秒
                 print(f'未找到新照片，继续等待... (第{self._check_count}次)')
                 Clock.schedule_once(self._check_latest_photo, 2)
             else:
                 print('超时未找到新照片')
                 self._check_count = 0
                 self._capture_time = None
-                self._show_error('未找到新拍摄的照片\n请使用相册选择图片\n\n可能原因：\n1. 相机照片保存路径不同\n2. 存储权限未开启\n3. 请手动从相册选择')
+                self._show_error('未找到新拍摄的照片\n请使用相册选择图片\n\n请确保已授予存储权限')
 
         except Exception as e:
             print(f'查找照片失败: {e}')
