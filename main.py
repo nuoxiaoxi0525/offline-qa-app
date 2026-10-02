@@ -539,67 +539,105 @@ class CameraScreen(Screen):
             self._show_error(f'启动相机失败: {str(e)[:60]}\n请使用相册选择图片')
 
     def _check_latest_photo(self, dt):
-        """扫描整个存储找到最新照片并复制到APP目录"""
+        """通过MediaStore查询最新照片（用字符串避免jnius嵌套类问题）"""
         try:
             # 记录拍照时间
             if not hasattr(self, '_capture_time'):
                 self._capture_time = time.time()
 
-            # 广泛扫描目录
-            scan_dirs = [
-                '/sdcard/DCIM',
-                '/sdcard/Pictures',
-                '/sdcard/Photos',
-                '/storage/emulated/0/DCIM',
-                '/storage/emulated/0/Pictures',
-                '/storage/emulated/0/Photos',
-                '/sdcard',
-            ]
+            photo_path = None
 
-            latest_file = None
-            latest_time = 0
-            scanned_count = 0
+            # 方法1：通过MediaStore查询（最可靠，不受分区存储限制）
+            try:
+                from jnius import autoclass
 
-            # 递归扫描目录
-            for scan_dir in scan_dirs:
-                try:
-                    if os.path.exists(scan_dir):
-                        for root, dirs, files in os.walk(scan_dir):
-                            # 跳过某些目录
-                            if any(skip in root for skip in ['.thumbnails', 'cache', 'Cache', '.git']):
-                                continue
-                            for filename in files:
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                Uri = autoclass('android.net.Uri')
+
+                # 用字符串创建Uri，避免jnius访问MediaStore嵌套类
+                uri = Uri.parse("content://media/external/images/media")
+
+                content_resolver = PythonActivity.mActivity.getContentResolver()
+
+                # 查询最新照片，按date_added降序
+                # 用字符串 "_data" 和 "date_added" 避免嵌套类访问
+                projection = ["_data", "date_added"]
+                sort_order = "date_added DESC"
+                cursor = content_resolver.query(uri, projection, None, None, sort_order)
+
+                if cursor and cursor.moveToFirst():
+                    # 获取照片路径（用字符串列名）
+                    data_index = cursor.getColumnIndex("_data")
+                    date_index = cursor.getColumnIndex("date_added")
+
+                    photo_path = cursor.getString(data_index)
+                    photo_date = cursor.getLong(date_index) * 1000  # 转为毫秒
+
+                    cursor.close()
+
+                    print(f'MediaStore查询到最新照片: {photo_path}, 时间戳: {photo_date}')
+
+                    # 检查是否是拍照后的新照片（10分钟内）
+                    current_time_ms = int(time.time() * 1000)
+                    if current_time_ms - photo_date > 600000:  # 超过10分钟
+                        print('照片不是最新拍摄的，继续等待...')
+                        photo_path = None
+                else:
+                    if cursor:
+                        cursor.close()
+                    print('MediaStore查询结果为空')
+
+            except Exception as e:
+                print(f'MediaStore查询失败: {e}')
+                traceback.print_exc()
+
+            # 方法2：如果MediaStore失败，回退到文件系统扫描
+            if not photo_path:
+                print('回退到文件系统扫描...')
+                scan_dirs = [
+                    '/sdcard/DCIM/Camera',
+                    '/sdcard/DCIM',
+                    '/storage/emulated/0/DCIM/Camera',
+                    '/storage/emulated/0/DCIM',
+                    '/sdcard/Pictures',
+                    '/storage/emulated/0/Pictures',
+                ]
+
+                latest_file = None
+                latest_time = 0
+
+                for scan_dir in scan_dirs:
+                    try:
+                        if os.path.exists(scan_dir):
+                            for filename in os.listdir(scan_dir):
                                 if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-                                    filepath = os.path.join(root, filename)
+                                    filepath = os.path.join(scan_dir, filename)
                                     try:
                                         mtime = os.path.getmtime(filepath)
-                                        scanned_count += 1
                                         if mtime > latest_time:
                                             latest_time = mtime
                                             latest_file = filepath
                                     except:
                                         pass
-                            # 限制扫描深度，避免扫描太久
-                            if root.count(os.sep) - scan_dir.count(os.sep) > 3:
-                                dirs.clear()
-                except Exception as e:
-                    print(f'扫描目录{scan_dir}失败: {e}')
-                    continue
+                            if latest_file:
+                                break
+                    except Exception as e:
+                        print(f'扫描目录{scan_dir}失败: {e}')
+                        continue
 
-            print(f'共扫描 {scanned_count} 个图片文件')
-            print(f'最新照片: {latest_file}, 时间: {latest_time}')
-            print(f'拍照时间: {self._capture_time}, 当前时间: {time.time()}')
+                if latest_file and latest_time >= self._capture_time - 10:
+                    photo_path = latest_file
+                    print(f'文件系统扫描找到: {photo_path}')
 
-            # 检查是否是拍照后的新照片（10分钟内）
-            current_time = time.time()
-            if latest_file and latest_time >= self._capture_time - 10:
-                print(f'找到新拍摄的照片: {latest_file}')
+            # 如果找到照片，复制到APP目录并进入裁剪
+            if photo_path and os.path.exists(photo_path):
+                print(f'使用照片: {photo_path}')
 
                 # 等待文件写入完成
                 try:
-                    size1 = os.path.getsize(latest_file)
+                    size1 = os.path.getsize(photo_path)
                     time.sleep(1)
-                    size2 = os.path.getsize(latest_file)
+                    size2 = os.path.getsize(photo_path)
                     if size1 != size2:
                         print('文件还在写入中，等待...')
                         time.sleep(2)
@@ -613,7 +651,7 @@ class CameraScreen(Screen):
                 self.photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
 
                 import shutil
-                shutil.copy2(latest_file, self.photo_path)
+                shutil.copy2(photo_path, self.photo_path)
                 print(f'已复制到: {self.photo_path}, 大小: {os.path.getsize(self.photo_path)}')
 
                 # 进入裁剪界面
@@ -622,13 +660,15 @@ class CameraScreen(Screen):
                 self.manager.current = 'crop'
                 return
 
-            # 没找到新照片，再等一会儿（最多等90秒）
+            # 没找到新照片，再等一会儿（最多等60秒）
             if not hasattr(self, '_check_count'):
                 self._check_count = 0
             self._check_count += 1
 
-            if self._check_count < 45:  # 最多等90秒
+            if self._check_count < 30:  # 最多等60秒
                 print(f'未找到新照片，继续等待... (第{self._check_count}次)')
+                if hasattr(self, 'status_label'):
+                    self.status_label.text = f'正在查找照片... ({self._check_count}/30)'
                 Clock.schedule_once(self._check_latest_photo, 2)
             else:
                 print('超时未找到新照片')
