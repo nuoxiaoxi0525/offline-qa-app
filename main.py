@@ -509,11 +509,12 @@ class CameraScreen(Screen):
 
             # 请求权限
             try:
-                request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE])
+                request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE, Permission.MANAGE_EXTERNAL_STORAGE])
             except:
                 pass
 
-            # 重置检查计数
+            # 记录拍照时间和重置检查计数
+            self._capture_time = time.time()
             self._check_count = 0
 
             # 使用Android系统相机Intent（不指定输出路径，最简单可靠）
@@ -536,24 +537,40 @@ class CameraScreen(Screen):
     def _check_latest_photo(self, dt):
         """扫描相机目录找到最新照片并复制到APP目录"""
         try:
-            # 可能的相机照片目录
+            # 记录拍照时间
+            if not hasattr(self, '_capture_time'):
+                self._capture_time = time.time()
+
+            # 可能的相机照片目录（包含iQOO/vivo特有的路径）
             camera_dirs = [
                 '/sdcard/DCIM/Camera',
                 '/sdcard/DCIM/',
+                '/sdcard/DCIM/Screenshots',
                 '/storage/emulated/0/DCIM/Camera',
                 '/storage/emulated/0/DCIM/',
+                '/storage/emulated/0/DCIM/Screenshots',
                 '/sdcard/Pictures/',
                 '/storage/emulated/0/Pictures/',
+                '/sdcard/Pictures/Camera',
+                '/storage/emulated/0/Pictures/Camera',
+                '/sdcard/DCIM/VivoCamera',
+                '/storage/emulated/0/DCIM/VivoCamera',
+                '/sdcard/DCIM/iQOO',
+                '/storage/emulated/0/DCIM/iQOO',
             ]
 
             latest_file = None
             latest_time = 0
+            found_dirs = []
 
             # 扫描所有可能的目录
             for camera_dir in camera_dirs:
                 try:
                     if os.path.exists(camera_dir):
-                        for filename in os.listdir(camera_dir):
+                        found_dirs.append(camera_dir)
+                        files = os.listdir(camera_dir)
+                        print(f'目录 {camera_dir} 有 {len(files)} 个文件')
+                        for filename in files:
                             if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
                                 filepath = os.path.join(camera_dir, filename)
                                 try:
@@ -563,17 +580,29 @@ class CameraScreen(Screen):
                                         latest_file = filepath
                                 except:
                                     pass
-                        # 如果在这个目录找到了文件，就不再继续扫描其他目录
-                        if latest_file:
-                            break
                 except Exception as e:
                     print(f'扫描目录{camera_dir}失败: {e}')
                     continue
 
-            # 检查是否是拍照后的新照片（5分钟内）
+            print(f'找到的目录: {found_dirs}')
+            print(f'最新照片: {latest_file}, 时间: {latest_time}')
+            print(f'拍照时间: {self._capture_time}, 当前时间: {time.time()}')
+
+            # 检查是否是拍照后的新照片（10分钟内）
             current_time = time.time()
-            if latest_file and (current_time - latest_time) < 300:  # 5分钟内
-                print(f'找到最新照片: {latest_file}, 时间: {latest_time}')
+            if latest_file and latest_time >= self._capture_time - 10:
+                print(f'找到新拍摄的照片: {latest_file}')
+
+                # 等待文件写入完成
+                try:
+                    size1 = os.path.getsize(latest_file)
+                    time.sleep(1)
+                    size2 = os.path.getsize(latest_file)
+                    if size1 != size2:
+                        print('文件还在写入中，等待...')
+                        time.sleep(2)
+                except:
+                    pass
 
                 # 复制到APP私有目录
                 photo_dir = os.path.join(BASE_DIR, 'photos')
@@ -583,7 +612,7 @@ class CameraScreen(Screen):
 
                 import shutil
                 shutil.copy2(latest_file, self.photo_path)
-                print(f'已复制到: {self.photo_path}')
+                print(f'已复制到: {self.photo_path}, 大小: {os.path.getsize(self.photo_path)}')
 
                 # 进入裁剪界面
                 crop_screen = self.manager.get_screen('crop')
@@ -591,18 +620,19 @@ class CameraScreen(Screen):
                 self.manager.current = 'crop'
                 return
 
-            # 没找到新照片，再等一会儿（最多等30秒）
+            # 没找到新照片，再等一会儿（最多等60秒）
             if not hasattr(self, '_check_count'):
                 self._check_count = 0
             self._check_count += 1
 
-            if self._check_count < 15:  # 最多等30秒
+            if self._check_count < 30:  # 最多等60秒
                 print(f'未找到新照片，继续等待... (第{self._check_count}次)')
                 Clock.schedule_once(self._check_latest_photo, 2)
             else:
                 print('超时未找到新照片')
                 self._check_count = 0
-                self._show_error('未找到新拍摄的照片\n请使用相册选择图片')
+                self._capture_time = None
+                self._show_error('未找到新拍摄的照片\n请使用相册选择图片\n\n可能原因：\n1. 相机照片保存路径不同\n2. 存储权限未开启\n3. 请手动从相册选择')
 
         except Exception as e:
             print(f'查找照片失败: {e}')
