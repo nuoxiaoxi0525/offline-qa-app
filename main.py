@@ -502,7 +502,7 @@ class CameraScreen(Screen):
         self.manager.current = 'main'
 
     def _on_capture(self, instance):
-        """使用Android系统相机拍照 - 不指定输出路径，拍照后查询最新照片"""
+        """使用Android系统相机拍照 - 不指定输出路径，拍照后扫描最新照片"""
         try:
             from jnius import autoclass
             from android.permissions import request_permissions, Permission
@@ -513,8 +513,8 @@ class CameraScreen(Screen):
             except:
                 pass
 
-            # 记录拍照前最新照片的时间，用于后续查询
-            self._before_capture_time = int(time.time() * 1000)
+            # 重置检查计数
+            self._check_count = 0
 
             # 使用Android系统相机Intent（不指定输出路径，最简单可靠）
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
@@ -534,62 +534,78 @@ class CameraScreen(Screen):
             self._show_error(f'启动相机失败: {str(e)[:60]}\n请使用相册选择图片')
 
     def _check_latest_photo(self, dt):
-        """查询系统相册中最新的照片并复制到APP目录"""
+        """扫描相机目录找到最新照片并复制到APP目录"""
         try:
-            from jnius import autoclass
+            # 可能的相机照片目录
+            camera_dirs = [
+                '/sdcard/DCIM/Camera',
+                '/sdcard/DCIM/',
+                '/storage/emulated/0/DCIM/Camera',
+                '/storage/emulated/0/DCIM/',
+                '/sdcard/Pictures/',
+                '/storage/emulated/0/Pictures/',
+            ]
 
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            MediaStore = autoclass('android.provider.MediaStore')
-            Cursor = autoclass('android.database.Cursor')
+            latest_file = None
+            latest_time = 0
 
-            content_resolver = PythonActivity.mActivity.getContentResolver()
-            uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            # 扫描所有可能的目录
+            for camera_dir in camera_dirs:
+                try:
+                    if os.path.exists(camera_dir):
+                        for filename in os.listdir(camera_dir):
+                            if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                                filepath = os.path.join(camera_dir, filename)
+                                try:
+                                    mtime = os.path.getmtime(filepath)
+                                    if mtime > latest_time:
+                                        latest_time = mtime
+                                        latest_file = filepath
+                                except:
+                                    pass
+                        # 如果在这个目录找到了文件，就不再继续扫描其他目录
+                        if latest_file:
+                            break
+                except Exception as e:
+                    print(f'扫描目录{camera_dir}失败: {e}')
+                    continue
 
-            # 查询最新照片
-            projection = [MediaStore.Images.Media.DATA, MediaStore.Images.Media.DATE_ADDED]
-            sort_order = MediaStore.Images.Media.DATE_ADDED + " DESC"
-            cursor = content_resolver.query(uri, projection, None, None, sort_order)
+            # 检查是否是拍照后的新照片（5分钟内）
+            current_time = time.time()
+            if latest_file and (current_time - latest_time) < 300:  # 5分钟内
+                print(f'找到最新照片: {latest_file}, 时间: {latest_time}')
 
-            if cursor and cursor.moveToFirst():
-                # 获取照片路径
-                column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
-                photo_path = cursor.getString(column_index)
-                date_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
-                photo_date = cursor.getLong(date_index) * 1000  # 转为毫秒
+                # 复制到APP私有目录
+                photo_dir = os.path.join(BASE_DIR, 'photos')
+                if not os.path.exists(photo_dir):
+                    os.makedirs(photo_dir)
+                self.photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
 
-                cursor.close()
+                import shutil
+                shutil.copy2(latest_file, self.photo_path)
+                print(f'已复制到: {self.photo_path}')
 
-                # 检查是否是拍照后的新照片（拍照后5分钟内）
-                current_time = int(time.time() * 1000)
-                if current_time - photo_date < 300000:  # 5分钟内
-                    print(f'找到最新照片: {photo_path}, 时间: {photo_date}')
+                # 进入裁剪界面
+                crop_screen = self.manager.get_screen('crop')
+                crop_screen.set_image(self.photo_path)
+                self.manager.current = 'crop'
+                return
 
-                    # 复制到APP私有目录
-                    import time
-                    photo_dir = os.path.join(BASE_DIR, 'photos')
-                    if not os.path.exists(photo_dir):
-                        os.makedirs(photo_dir)
-                    self.photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
+            # 没找到新照片，再等一会儿（最多等30秒）
+            if not hasattr(self, '_check_count'):
+                self._check_count = 0
+            self._check_count += 1
 
-                    import shutil
-                    shutil.copy2(photo_path, self.photo_path)
-                    print(f'已复制到: {self.photo_path}')
-
-                    # 进入裁剪界面
-                    crop_screen = self.manager.get_screen('crop')
-                    crop_screen.set_image(self.photo_path)
-                    self.manager.current = 'crop'
-                    return
-
-            if cursor:
-                cursor.close()
-
-            # 没找到新照片，再等一会儿
-            print('未找到新照片，继续等待...')
-            Clock.schedule_once(self._check_latest_photo, 2)
+            if self._check_count < 15:  # 最多等30秒
+                print(f'未找到新照片，继续等待... (第{self._check_count}次)')
+                Clock.schedule_once(self._check_latest_photo, 2)
+            else:
+                print('超时未找到新照片')
+                self._check_count = 0
+                self._show_error('未找到新拍摄的照片\n请使用相册选择图片')
 
         except Exception as e:
-            print(f'查询照片失败: {e}')
+            print(f'查找照片失败: {e}')
             traceback.print_exc()
             self._show_error(f'获取照片失败: {str(e)[:60]}\n请使用相册选择图片')
 
