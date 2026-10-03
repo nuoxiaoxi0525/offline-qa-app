@@ -618,43 +618,143 @@ class CameraScreen(Screen):
             self._show_error(f'启动相机失败: {str(e)[:60]}\n请使用相册选择图片')
 
     def _check_captured_photo(self, dt):
-        """检查指定输出路径的照片是否已保存"""
+        """通过MediaStore查询最新照片，用ContentResolver复制"""
         try:
             print(f'=== 开始检查照片 (第{getattr(self, "_check_count", 0)+1}次) ===')
-            print(f'指定输出路径: {getattr(self, "_output_path", "未设置")}')
-            print(f'BASE_DIR: {BASE_DIR}')
+            print(f'拍照时间: {getattr(self, "_capture_time", "未设置")}')
 
-            # 列出BASE_DIR下的所有文件
+            # 通过MediaStore查询最新照片
             try:
-                if os.path.exists(BASE_DIR):
-                    print(f'BASE_DIR内容: {os.listdir(BASE_DIR)}')
-                photos_dir = os.path.join(BASE_DIR, 'photos')
-                if os.path.exists(photos_dir):
-                    print(f'photos目录内容: {os.listdir(photos_dir)}')
+                from jnius import autoclass
+
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                Uri = autoclass('android.net.Uri')
+                ContentUris = autoclass('android.content.ContentUris')
+
+                base_uri = Uri.parse("content://media/external/images/media")
+                content_resolver = PythonActivity.mActivity.getContentResolver()
+
+                # 查询最新的5张照片
+                cursor = content_resolver.query(base_uri, ["_id", "_data", "date_added"], None, None, "date_added DESC LIMIT 5")
+
+                if cursor and cursor.moveToFirst():
+                    photos = []
+                    while not cursor.isAfterLast():
+                        try:
+                            p_id = cursor.getLong(0)
+                            p_data = cursor.getString(1)
+                            p_date = cursor.getLong(2)
+                            photos.append((p_id, p_data, p_date))
+                            print(f'  照片: ID={p_id}, path={p_data}, date={p_date}')
+                        except Exception as e:
+                            print(f'  读取照片信息失败: {e}')
+                        if not cursor.moveToNext():
+                            break
+                    cursor.close()
+
+                    # 尝试复制每一张照片
+                    for p_id, p_data, p_date in photos:
+                        try:
+                            photo_uri = ContentUris.withAppendedId(base_uri, p_id)
+                            input_stream = content_resolver.openInputStream(photo_uri)
+
+                            if input_stream:
+                                from jnius import autoclass
+                                BufferedInputStream = autoclass('java.io.BufferedInputStream')
+                                ByteArrayOutputStream = autoclass('java.io.ByteArrayOutputStream')
+
+                                buffered_stream = BufferedInputStream(input_stream)
+                                byte_array_stream = ByteArrayOutputStream()
+                                buffer = [0] * 8192
+                                while True:
+                                    read = buffered_stream.read(buffer)
+                                    if read == -1:
+                                        break
+                                    byte_array_stream.write(buffer, 0, read)
+
+                                photo_bytes = byte_array_stream.toByteArray()
+                                buffered_stream.close()
+                                input_stream.close()
+                                byte_array_stream.close()
+
+                                if len(photo_bytes) > 1000:  # 至少1KB才是有效照片
+                                    # 保存到APP私有目录
+                                    photo_dir = os.path.join(BASE_DIR, 'photos')
+                                    if not os.path.exists(photo_dir):
+                                        os.makedirs(photo_dir)
+                                    self.photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
+
+                                    with open(self.photo_path, 'wb') as f:
+                                        f.write(photo_bytes)
+
+                                    print(f'成功复制照片: {self.photo_path}, 大小: {len(photo_bytes)} 字节')
+
+                                    # 进入裁剪界面
+                                    crop_screen = self.manager.get_screen('crop')
+                                    crop_screen.set_image(self.photo_path)
+                                    self.manager.current = 'crop'
+                                    return
+                        except Exception as e:
+                            print(f'  复制照片ID={p_id}失败: {e}')
+                            continue
+                else:
+                    if cursor:
+                        cursor.close()
+                    print('MediaStore查询结果为空')
+
             except Exception as e:
-                print(f'列出目录失败: {e}')
+                print(f'MediaStore查询失败: {e}')
+                traceback.print_exc()
 
-            # 方法1：检查指定的输出路径
-            if hasattr(self, '_output_path') and os.path.exists(self._output_path):
-                file_size = os.path.getsize(self._output_path)
-                print(f'找到指定路径的照片: {self._output_path}, 大小: {file_size}')
+            # 回退到文件系统扫描
+            print('回退到文件系统扫描...')
+            scan_dirs = [
+                '/sdcard/DCIM/Camera',
+                '/sdcard/DCIM',
+                '/storage/emulated/0/DCIM/Camera',
+                '/storage/emulated/0/DCIM',
+            ]
 
-                if file_size > 0:
-                    # 等待文件写入完成
-                    time.sleep(1)
-                    file_size2 = os.path.getsize(self._output_path)
-                    if file_size != file_size2:
-                        print('文件还在写入中，等待...')
-                        time.sleep(2)
+            latest_file = None
+            latest_time = 0
 
-                    self.photo_path = self._output_path
-                    print(f'使用照片: {self.photo_path}')
+            for scan_dir in scan_dirs:
+                try:
+                    if os.path.exists(scan_dir):
+                        files = os.listdir(scan_dir)
+                        print(f'  目录 {scan_dir} 有 {len(files)} 个文件')
+                        for filename in files:
+                            if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                                filepath = os.path.join(scan_dir, filename)
+                                try:
+                                    mtime = os.path.getmtime(filepath)
+                                    if mtime > latest_time:
+                                        latest_time = mtime
+                                        latest_file = filepath
+                                except:
+                                    pass
+                        if latest_file:
+                            break
+                except Exception as e:
+                    print(f'  扫描目录{scan_dir}失败: {e}')
+                    continue
 
-                    # 进入裁剪界面
-                    crop_screen = self.manager.get_screen('crop')
-                    crop_screen.set_image(self.photo_path)
-                    self.manager.current = 'crop'
-                    return
+            if latest_file and os.path.exists(latest_file):
+                print(f'文件系统找到: {latest_file}')
+                import shutil
+                photo_dir = os.path.join(BASE_DIR, 'photos')
+                if not os.path.exists(photo_dir):
+                    os.makedirs(photo_dir)
+                self.photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
+                try:
+                    shutil.copy2(latest_file, self.photo_path)
+                    if os.path.getsize(self.photo_path) > 1000:
+                        crop_screen = self.manager.get_screen('crop')
+                        crop_screen.set_image(self.photo_path)
+                        self.manager.current = 'crop'
+                        return
+                except Exception as e:
+                    print(f'复制文件失败: {e}')
 
             # 方法2：如果指定路径没有，通过MediaStore查询
             print('指定路径无照片，尝试MediaStore查询...')

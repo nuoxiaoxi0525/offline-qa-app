@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>拍照搜题</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e;
+            color: white;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #header {
+            padding: 15px;
+            text-align: center;
+            font-size: 18px;
+            background: #16213e;
+        }
+        #container {
+            flex: 1;
+            position: relative;
+            background: #000;
+        }
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        #canvas {
+            display: none;
+        }
+        #frame {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            height: 60%;
+            border: 3px solid #00d4ff;
+            border-radius: 10px;
+            pointer-events: none;
+        }
+        #frame::before, #frame::after {
+            content: '';
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border: 4px solid #00d4ff;
+        }
+        #frame::before {
+            top: -3px; left: -3px;
+            border-right: none; border-bottom: none;
+        }
+        #frame::after {
+            bottom: -3px; right: -3px;
+            border-left: none; border-top: none;
+        }
+        #controls {
+            padding: 20px;
+            background: #16213e;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+        }
+        .btn {
+            padding: 15px 30px;
+            font-size: 16px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            color: white;
+        }
+        #captureBtn {
+            background: #00d4ff;
+            color: #000;
+            font-size: 18px;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 4px solid white;
+        }
+        #backBtn {
+            background: #555;
+        }
+        #albumBtn {
+            background: #e67e22;
+        }
+        #status {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+        #error {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">拍照搜题</div>
+    <div id="container">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+        <div id="frame"></div>
+        <div id="status">正在启动相机...</div>
+        <div id="error" style="display:none;"></div>
+    </div>
+    <div id="controls">
+        <button class="btn" id="backBtn">返回</button>
+        <button class="btn" id="captureBtn">拍照</button>
+        <button class="btn" id="albumBtn">相册</button>
+    </div>
+
+    <script>
+        let video = document.getElementById('video');
+        let canvas = document.getElementById('canvas');
+        let status = document.getElementById('status');
+        let errorDiv = document.getElementById('error');
+        let stream = null;
+
+        // 启动相机
+        async function startCamera() {
+            try {
+                status.style.display = 'block';
+                status.textContent = '正在启动相机...';
+
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    },
+                    audio: false
+                });
+
+                video.srcObject = stream;
+                await video.play();
+
+                status.style.display = 'none';
+                console.log('相机启动成功');
+            } catch (err) {
+                console.error('相机启动失败:', err);
+                status.style.display = 'none';
+                errorDiv.style.display = 'block';
+                errorDiv.innerHTML = '相机启动失败: ' + err.message + '<br><br>请确保已授予相机权限';
+            }
+        }
+
+        // 拍照
+        function capture() {
+            if (!stream) {
+                alert('相机未启动');
+                return;
+            }
+
+            try {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                let ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0);
+
+                let dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                console.log('拍照成功，数据长度:', dataUrl.length);
+
+                // 调用Python接口保存照片
+                if (window.PythonBridge) {
+                    window.PythonBridge.onPhotoCaptured(dataUrl);
+                } else {
+                    // 下载照片（用于测试）
+                    let a = document.createElement('a');
+                    a.href = dataUrl;
+                    a.download = 'capture.jpg';
+                    a.click();
+                }
+            } catch (err) {
+                console.error('拍照失败:', err);
+                alert('拍照失败: ' + err.message);
+            }
+        }
+
+        // 返回
+        function goBack() {
+            if (window.PythonBridge) {
+                window.PythonBridge.onBack();
+            }
+        }
+
+        // 相册选择
+        function selectAlbum() {
+            if (window.PythonBridge) {
+                window.PythonBridge.onAlbum();
+            }
+        }
+
+        // 绑定按钮事件
+        document.getElementById('captureBtn').addEventListener('click', capture);
+        document.getElementById('backBtn').addEventListener('click', goBack);
+        document.getElementById('albumBtn').addEventListener('click', selectAlbum);
+
+        // 启动相机
+        startCamera();
+    </script>
+</body>
+</html>
