@@ -506,7 +506,7 @@ class CameraScreen(Screen):
         self.manager.current = 'main'
 
     def _on_capture(self, instance):
-        """使用Android系统相机拍照 - 指定输出路径到APP私有目录"""
+        """使用Android系统相机拍照 - 使用外部私有目录作为输出路径"""
         try:
             from jnius import autoclass
             from android.permissions import request_permissions, Permission
@@ -514,49 +514,89 @@ class CameraScreen(Screen):
             # 请求权限
             try:
                 request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE])
-            except:
-                pass
+            except Exception as e:
+                print(f'请求权限失败: {e}')
 
-            # 创建照片保存路径（APP私有目录，一定可以访问）
-            photo_dir = os.path.join(BASE_DIR, 'photos')
+            # 使用外部私有目录（系统相机可以写入）
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Environment = autoclass('android.os.Environment')
+
+            # 获取外部私有目录
+            try:
+                external_files_dir = PythonActivity.mActivity.getExternalFilesDir(None)
+                if external_files_dir:
+                    photo_dir = os.path.join(str(external_files_dir.getAbsolutePath()), 'photos')
+                else:
+                    photo_dir = os.path.join(BASE_DIR, 'photos')
+            except Exception as e:
+                print(f'获取外部私有目录失败: {e}')
+                photo_dir = os.path.join(BASE_DIR, 'photos')
+
             if not os.path.exists(photo_dir):
                 os.makedirs(photo_dir)
+
             self._output_path = os.path.join(photo_dir, f'capture_{int(time.time())}.jpg')
             print(f'照片输出路径: {self._output_path}')
+            print(f'目录是否存在: {os.path.exists(photo_dir)}')
+            print(f'目录可写: {os.access(photo_dir, os.W_OK)}')
 
-            # 启动系统相机，指定输出路径
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            # 启动系统相机
             Intent = autoclass('android.content.Intent')
             Uri = autoclass('android.net.Uri')
             MediaStore = autoclass('android.provider.MediaStore')
 
             intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            print(f'Intent创建成功: {intent}')
 
-            # 用file://方式创建Uri，避免jnius类型问题
+            # 用file://方式创建Uri
             output_uri = Uri.parse("file://" + self._output_path)
             print(f'输出Uri: {output_uri}')
 
-            # 尝试指定输出路径
+            # 指定输出路径
             try:
                 intent.putExtra(MediaStore.EXTRA_OUTPUT, output_uri)
-                print('已指定输出路径')
+                print('已指定输出路径EXTRA_OUTPUT')
             except Exception as e:
                 print(f'指定输出路径失败: {e}')
-                # 如果失败，就不指定输出路径，拍照后再扫描
+                traceback.print_exc()
+
+            # 添加FLAG_GRANT_WRITE_URI_PERMISSION和FLAG_GRANT_READ_URI_PERMISSION
+            try:
+                intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                print('已添加URI权限FLAG')
+            except Exception as e:
+                print(f'添加FLAG失败: {e}')
 
             # 启动相机
-            PythonActivity.mActivity.startActivityForResult(intent, 1001)
-            print('系统相机已启动')
+            try:
+                PythonActivity.mActivity.startActivityForResult(intent, 1001)
+                print('系统相机已启动 startActivityForResult')
+            except Exception as e:
+                print(f'启动相机失败: {e}')
+                traceback.print_exc()
+                # 尝试使用startActivity
+                try:
+                    PythonActivity.mActivity.startActivity(intent)
+                    print('使用startActivity启动相机成功')
+                except Exception as e2:
+                    print(f'startActivity也失败: {e2}')
+                    self._show_error(f'启动相机失败: {str(e)[:60]}')
+                    return
 
             # 记录拍照时间和重置检查计数
             self._capture_time = time.time()
             self._check_count = 0
 
+            # 更新状态
+            if hasattr(self, 'status_label'):
+                self.status_label.text = '相机已启动，请拍照...'
+
             # 延迟后开始检查照片
             Clock.schedule_once(self._check_captured_photo, 3)
 
         except Exception as e:
-            print(f'启动相机失败: {e}')
+            print(f'启动相机异常: {e}')
             traceback.print_exc()
             self._show_error(f'启动相机失败: {str(e)[:60]}')
 
@@ -580,10 +620,26 @@ class CameraScreen(Screen):
     def _check_captured_photo(self, dt):
         """检查指定输出路径的照片是否已保存"""
         try:
+            print(f'=== 开始检查照片 (第{getattr(self, "_check_count", 0)+1}次) ===')
+            print(f'指定输出路径: {getattr(self, "_output_path", "未设置")}')
+            print(f'BASE_DIR: {BASE_DIR}')
+
+            # 列出BASE_DIR下的所有文件
+            try:
+                if os.path.exists(BASE_DIR):
+                    print(f'BASE_DIR内容: {os.listdir(BASE_DIR)}')
+                photos_dir = os.path.join(BASE_DIR, 'photos')
+                if os.path.exists(photos_dir):
+                    print(f'photos目录内容: {os.listdir(photos_dir)}')
+            except Exception as e:
+                print(f'列出目录失败: {e}')
+
             # 方法1：检查指定的输出路径
-            if hasattr(self, '_output_path') and os.path.exists(self._output_path):
-                file_size = os.path.getsize(self._output_path)
-                print(f'找到指定路径的照片: {self._output_path}, 大小: {file_size}')
+            if hasattr(self, '_output_path'):
+                print(f'检查输出路径是否存在: {os.path.exists(self._output_path)}')
+                if os.path.exists(self._output_path):
+                    file_size = os.path.getsize(self._output_path)
+                    print(f'找到指定路径的照片: {self._output_path}, 大小: {file_size}')
 
                 if file_size > 0:
                     # 等待文件写入完成
