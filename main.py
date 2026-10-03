@@ -635,11 +635,9 @@ class CameraScreen(Screen):
                 print(f'列出目录失败: {e}')
 
             # 方法1：检查指定的输出路径
-            if hasattr(self, '_output_path'):
-                print(f'检查输出路径是否存在: {os.path.exists(self._output_path)}')
-                if os.path.exists(self._output_path):
-                    file_size = os.path.getsize(self._output_path)
-                    print(f'找到指定路径的照片: {self._output_path}, 大小: {file_size}')
+            if hasattr(self, '_output_path') and os.path.exists(self._output_path):
+                file_size = os.path.getsize(self._output_path)
+                print(f'找到指定路径的照片: {self._output_path}, 大小: {file_size}')
 
                 if file_size > 0:
                     # 等待文件写入完成
