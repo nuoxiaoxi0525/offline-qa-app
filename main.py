@@ -432,11 +432,13 @@ class MainScreen(Screen):
 
 
 class CameraScreen(Screen):
-    """拍照界面 - 使用Android系统相机，完全避免Kivy Camera闪退问题"""
+    """拍照界面 - 使用WebView + HTML5相机API"""
+
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.name = 'camera'
-        self.photo_path = None
+        super(CameraScreen, self).__init__(**kwargs)
+        self._webview = None
+        self._photo_data = None
+        self._checking = False
         self._build_ui()
 
     def _build_ui(self):
@@ -453,466 +455,348 @@ class CameraScreen(Screen):
         top_bar.add_widget(title)
         layout.add_widget(top_bar)
 
-        # 中间状态区域
-        middle = BoxLayout(orientation='vertical', size_hint_y=0.7, padding=30, spacing=20)
-        middle.add_widget(Label(size_hint_y=0.1))
-        icon_label = Label(text='[size=80sp]\U0001F4F7[/size]', markup=True, size_hint_y=0.3)
-        middle.add_widget(icon_label)
-        self.status_label = Label(text='正在启动相机...', font_size='18sp', font_name='ChineseFont', color=[1, 1, 1, 1], size_hint_y=0.1)
-        middle.add_widget(self.status_label)
-        hint2 = Label(text='拍照完成后自动返回裁剪', font_size='14sp', font_name='ChineseFont', color=[0.7, 0.7, 0.7, 1], size_hint_y=0.1)
-        middle.add_widget(hint2)
-        middle.add_widget(Label(size_hint_y=0.2))
-        layout.add_widget(middle)
+        # 状态提示
+        self.status_label = Label(text='正在启动相机...', font_size='16sp',
+                                  font_name='ChineseFont', color=[1, 1, 1, 1],
+                                  size_hint_y=0.05)
+        layout.add_widget(self.status_label)
+
+        # WebView容器（占位）
+        self.webview_placeholder = BoxLayout(size_hint_y=0.77)
+        layout.add_widget(self.webview_placeholder)
 
         # 底部按钮区域
-        btn_layout = BoxLayout(orientation='horizontal', size_hint_y=0.22, padding=20, spacing=20)
+        btn_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, padding=20, spacing=20)
+
         close_btn = Button(text='返回', font_size='16sp', background_color=[0.5, 0.5, 0.5, 1],
                           background_normal='', font_name='ChineseFont')
         close_btn.bind(on_press=self._on_close)
         btn_layout.add_widget(close_btn)
 
-        recapture_btn = Button(text='重新拍照', font_size='18sp', background_color=[0.2, 0.6, 0.9, 1],
-                             background_normal='', font_name='ChineseFont')
-        recapture_btn.bind(on_press=self._on_capture)
-        btn_layout.add_widget(recapture_btn)
-
         album_btn = Button(text='相册', font_size='16sp', background_color=[0.6, 0.5, 0.3, 1],
                           background_normal='', font_name='ChineseFont')
         album_btn.bind(on_press=self._on_album)
         btn_layout.add_widget(album_btn)
-        layout.add_widget(btn_layout)
 
+        layout.add_widget(btn_layout)
         self.add_widget(layout)
 
     def on_enter(self):
-        """进入页面时直接启动系统相机"""
+        """进入页面时创建WebView"""
         try:
             from android.permissions import request_permissions, Permission
-            request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE, Permission.MANAGE_EXTERNAL_STORAGE])
+            request_permissions([Permission.CAMERA])
         except Exception as e:
             print(f'权限请求跳过: {e}')
-        # 延迟0.5秒后自动启动相机
-        Clock.schedule_once(self._auto_start_camera, 0.5)
+        Clock.schedule_once(self._create_webview, 0.5)
 
-    def _auto_start_camera(self, dt=None):
-        """自动启动系统相机"""
-        self._on_capture(None)
+    def _create_webview(self, dt=None):
+        """创建Android WebView并加载相机页面"""
+        try:
+            from jnius import autoclass
+            from android.runnable import run_on_ui_thread
 
-    def on_leave(self):
-        pass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            activity = PythonActivity.mActivity
 
-    def _on_close(self, instance):
-        self.manager.current = 'main'
+            # 创建WebView
+            WebView = autoclass('android.webkit.WebView')
+            self._webview = WebView(activity)
 
-    def _on_capture(self, instance):
-        """使用Android系统相机拍照 - 使用外部私有目录作为输出路径"""
+            # 配置WebView设置
+            settings = self._webview.getSettings()
+            settings.setJavaScriptEnabled(True)
+            settings.setDomStorageEnabled(True)
+            settings.setAllowFileAccess(True)
+            settings.setAllowContentAccess(True)
+            settings.setMediaPlaybackRequiresUserGesture(False)
+            settings.setUserAgentString('Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36')
+
+            # 设置WebViewClient
+            WebViewClient = autoclass('android.webkit.WebViewClient')
+            self._webview.setWebViewClient(WebViewClient())
+
+            # 添加WebView到Activity
+            @run_on_ui_thread
+            def add_view():
+                LayoutParams = autoclass('android.view.ViewGroup$LayoutParams')
+                params = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+                # 获取内容区域
+                content_view = activity.findViewById(16908290)  # android.R.id.content
+                if content_view:
+                    content_view.addView(self._webview, params)
+                else:
+                    activity.addContentView(self._webview, params)
+                print('WebView已添加到Activity')
+
+            add_view()
+
+            # 加载相机HTML页面
+            html_content = self._get_camera_html()
+            self._webview.loadDataWithBaseURL('file:///android_asset/', html_content, 'text/html', 'UTF-8', None)
+            print('WebView加载相机页面成功')
+
+            self.status_label.text = '相机已启动，请对准题目后点击拍照'
+
+            # 开始检查是否有拍照数据
+            self._checking = True
+            Clock.schedule_interval(self._check_photo_data, 1)
+
+        except Exception as e:
+            print(f'创建WebView失败: {e}')
+            traceback.print_exc()
+            self.status_label.text = 'WebView创建失败，使用系统相机'
+            Clock.schedule_once(self._on_capture, 1)
+
+    def _get_camera_html(self):
+        """返回HTML相机页面"""
+        return """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; color:#fff; font-family:sans-serif; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+#container { flex:1; position:relative; background:#000; }
+#video { width:100%; height:100%; object-fit:contain; }
+#canvas { display:none; }
+#frame { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:85%; height:65%; border:3px solid #00d4ff; border-radius:10px; pointer-events:none; }
+#controls { padding:15px; background:#16213e; display:flex; justify-content:center; }
+#captureBtn { width:70px; height:70px; border-radius:50%; background:#00d4ff; border:4px solid #fff; font-size:14px; color:#000; cursor:pointer; }
+#status { position:absolute; top:10px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.7); padding:8px 16px; border-radius:20px; font-size:14px; }
+#error { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); text-align:center; padding:20px; display:none; }
+</style>
+</head>
+<body>
+<div id="container">
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+<div id="frame"></div>
+<div id="status">正在启动相机...</div>
+<div id="error"></div>
+</div>
+<div id="controls">
+<button id="captureBtn">拍照</button>
+</div>
+<script>
+let video = document.getElementById('video');
+let canvas = document.getElementById('canvas');
+let status = document.getElementById('status');
+let errorDiv = document.getElementById('error');
+let stream = null;
+
+async function startCamera() {
+    try {
+        status.style.display = 'block';
+        status.textContent = '正在启动相机...';
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+            audio: false
+        });
+        video.srcObject = stream;
+        await video.play();
+        status.style.display = 'none';
+        console.log('相机启动成功');
+    } catch (err) {
+        console.error('相机启动失败:', err);
+        status.style.display = 'none';
+        errorDiv.style.display = 'block';
+        errorDiv.innerHTML = '相机启动失败: ' + err.message + '<br><br>请确保已授予相机权限';
+    }
+}
+
+function capture() {
+    if (!stream) { alert('相机未启动'); return; }
+    try {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        let ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+        let dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        // 保存到localStorage供Python读取
+        localStorage.setItem('photo_data', dataUrl);
+        localStorage.setItem('photo_time', Date.now().toString());
+        status.style.display = 'block';
+        status.textContent = '拍照成功，正在处理...';
+        console.log('拍照成功，数据长度:', dataUrl.length);
+    } catch (err) {
+        console.error('拍照失败:', err);
+        alert('拍照失败: ' + err.message);
+    }
+}
+
+document.getElementById('captureBtn').addEventListener('click', capture);
+startCamera();
+</script>
+</body>
+</html>"""
+
+    def _check_photo_data(self, dt):
+        """检查WebView中是否有拍照数据"""
+        if not self._webview or not self._checking:
+            return
+
+        try:
+            from jnius import autoclass
+            ValueCallback = autoclass('android.webkit.ValueCallback')
+
+            # 创建回调
+            class PhotoCallback:
+                def __init__(self, screen):
+                    self.screen = screen
+                def onReceiveValue(self, value):
+                    if value and value != 'null':
+                        # 去掉引号
+                        data = value.strip('"')
+                        if data and len(data) > 100:
+                            print(f'获取到拍照数据，长度: {len(data)}')
+                            self.screen._handle_photo_data(data)
+
+            callback = PhotoCallback(self)
+            self._webview.evaluateJavascript("localStorage.getItem('photo_data')", callback)
+
+        except Exception as e:
+            print(f'检查拍照数据失败: {e}')
+
+    def _handle_photo_data(self, data_url):
+        """处理拍照数据"""
+        try:
+            self._checking = False
+
+            # 解码base64数据
+            import base64
+            if data_url.startswith('data:image/jpeg;base64,'):
+                base64_data = data_url[len('data:image/jpeg;base64,'):]
+            else:
+                base64_data = data_url
+
+            photo_bytes = base64.b64decode(base64_data)
+            print(f'解码照片数据成功，大小: {len(photo_bytes)} 字节')
+
+            # 保存到APP私有目录
+            photo_dir = os.path.join(BASE_DIR, 'photos')
+            if not os.path.exists(photo_dir):
+                os.makedirs(photo_dir)
+            self.photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
+
+            with open(self.photo_path, 'wb') as f:
+                f.write(photo_bytes)
+
+            print(f'照片已保存: {self.photo_path}')
+
+            # 清除WebView中的数据
+            try:
+                self._webview.evaluateJavascript("localStorage.removeItem('photo_data')", None)
+            except:
+                pass
+
+            # 进入裁剪界面
+            crop_screen = self.manager.get_screen('crop')
+            crop_screen.set_image(self.photo_path)
+            self.manager.current = 'crop'
+
+        except Exception as e:
+            print(f'处理拍照数据失败: {e}')
+            traceback.print_exc()
+            self.status_label.text = '处理照片失败: ' + str(e)[:50]
+
+    def _on_capture(self, instance=None):
+        """回退方案：使用系统相机"""
         try:
             from jnius import autoclass
             from android.permissions import request_permissions, Permission
-
-            # 请求权限
             try:
                 request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE])
-            except Exception as e:
-                print(f'请求权限失败: {e}')
+            except:
+                pass
 
-            # 使用外部私有目录（系统相机可以写入）
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            Environment = autoclass('android.os.Environment')
-
-            # 获取外部私有目录
-            try:
-                external_files_dir = PythonActivity.mActivity.getExternalFilesDir(None)
-                if external_files_dir:
-                    photo_dir = os.path.join(str(external_files_dir.getAbsolutePath()), 'photos')
-                else:
-                    photo_dir = os.path.join(BASE_DIR, 'photos')
-            except Exception as e:
-                print(f'获取外部私有目录失败: {e}')
-                photo_dir = os.path.join(BASE_DIR, 'photos')
-
-            if not os.path.exists(photo_dir):
-                os.makedirs(photo_dir)
-
-            self._output_path = os.path.join(photo_dir, f'capture_{int(time.time())}.jpg')
-            print(f'照片输出路径: {self._output_path}')
-            print(f'目录是否存在: {os.path.exists(photo_dir)}')
-            print(f'目录可写: {os.access(photo_dir, os.W_OK)}')
-
-            # 启动系统相机
-            Intent = autoclass('android.content.Intent')
-            Uri = autoclass('android.net.Uri')
-            MediaStore = autoclass('android.provider.MediaStore')
-
-            intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-            print(f'Intent创建成功: {intent}')
-
-            # 用file://方式创建Uri
-            output_uri = Uri.parse("file://" + self._output_path)
-            print(f'输出Uri: {output_uri}')
-
-            # 指定输出路径
-            try:
-                intent.putExtra(MediaStore.EXTRA_OUTPUT, output_uri)
-                print('已指定输出路径EXTRA_OUTPUT')
-            except Exception as e:
-                print(f'指定输出路径失败: {e}')
-                traceback.print_exc()
-
-            # 添加FLAG_GRANT_WRITE_URI_PERMISSION和FLAG_GRANT_READ_URI_PERMISSION
-            try:
-                intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                print('已添加URI权限FLAG')
-            except Exception as e:
-                print(f'添加FLAG失败: {e}')
-
-            # 启动相机
-            try:
-                PythonActivity.mActivity.startActivityForResult(intent, 1001)
-                print('系统相机已启动 startActivityForResult')
-            except Exception as e:
-                print(f'启动相机失败: {e}')
-                traceback.print_exc()
-                # 尝试使用startActivity
-                try:
-                    PythonActivity.mActivity.startActivity(intent)
-                    print('使用startActivity启动相机成功')
-                except Exception as e2:
-                    print(f'startActivity也失败: {e2}')
-                    self._show_error(f'启动相机失败: {str(e)[:60]}')
-                    return
-
-            # 记录拍照时间和重置检查计数
-            self._capture_time = time.time()
-            self._check_count = 0
-
-            # 更新状态
-            if hasattr(self, 'status_label'):
-                self.status_label.text = '相机已启动，请拍照...'
-
-            # 延迟后开始检查照片
-            Clock.schedule_once(self._check_captured_photo, 3)
-
-        except Exception as e:
-            print(f'启动相机异常: {e}')
-            traceback.print_exc()
-            self._show_error(f'启动相机失败: {str(e)[:60]}')
-
-            # 使用Android系统相机Intent（不指定输出路径，最简单可靠）
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             Intent = autoclass('android.content.Intent')
             MediaStore = autoclass('android.provider.MediaStore')
-
             intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
             PythonActivity.mActivity.startActivityForResult(intent, 1001)
-            print('已启动系统相机')
-
-            # 延迟检查最新照片
-            Clock.schedule_once(self._check_latest_photo, 3)
-
+            self._capture_time = time.time()
+            self._check_count = 0
+            Clock.schedule_once(self._check_captured_photo, 5)
         except Exception as e:
-            print(f'启动相机失败: {e}')
-            traceback.print_exc()
-            self._show_error(f'启动相机失败: {str(e)[:60]}\n请使用相册选择图片')
+            print(f'启动系统相机失败: {e}')
+            self._show_error(f'启动相机失败: {str(e)[:60]}')
 
     def _check_captured_photo(self, dt):
-        """通过MediaStore查询最新照片，用ContentResolver复制"""
+        """系统相机回退方案：检查照片"""
         try:
-            print(f'=== 开始检查照片 (第{getattr(self, "_check_count", 0)+1}次) ===')
-            print(f'拍照时间: {getattr(self, "_capture_time", "未设置")}')
-
-            # 通过MediaStore查询最新照片
-            try:
-                from jnius import autoclass
-
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                Uri = autoclass('android.net.Uri')
-                ContentUris = autoclass('android.content.ContentUris')
-
-                base_uri = Uri.parse("content://media/external/images/media")
-                content_resolver = PythonActivity.mActivity.getContentResolver()
-
-                # 查询最新的5张照片
-                cursor = content_resolver.query(base_uri, ["_id", "_data", "date_added"], None, None, "date_added DESC LIMIT 5")
-
-                if cursor and cursor.moveToFirst():
-                    photos = []
-                    while not cursor.isAfterLast():
-                        try:
-                            p_id = cursor.getLong(0)
-                            p_data = cursor.getString(1)
-                            p_date = cursor.getLong(2)
-                            photos.append((p_id, p_data, p_date))
-                            print(f'  照片: ID={p_id}, path={p_data}, date={p_date}')
-                        except Exception as e:
-                            print(f'  读取照片信息失败: {e}')
-                        if not cursor.moveToNext():
+            from jnius import autoclass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Uri = autoclass('android.net.Uri')
+            ContentUris = autoclass('android.content.ContentUris')
+            base_uri = Uri.parse("content://media/external/images/media")
+            content_resolver = PythonActivity.mActivity.getContentResolver()
+            cursor = content_resolver.query(base_uri, ["_id"], None, None, "date_added DESC LIMIT 1")
+            if cursor and cursor.moveToFirst():
+                p_id = cursor.getLong(0)
+                cursor.close()
+                photo_uri = ContentUris.withAppendedId(base_uri, p_id)
+                input_stream = content_resolver.openInputStream(photo_uri)
+                if input_stream:
+                    BufferedInputStream = autoclass('java.io.BufferedInputStream')
+                    ByteArrayOutputStream = autoclass('java.io.ByteArrayOutputStream')
+                    buffered_stream = BufferedInputStream(input_stream)
+                    byte_array_stream = ByteArrayOutputStream()
+                    buffer = [0] * 8192
+                    while True:
+                        read = buffered_stream.read(buffer)
+                        if read == -1:
                             break
-                    cursor.close()
-
-                    # 尝试复制每一张照片
-                    for p_id, p_data, p_date in photos:
-                        try:
-                            photo_uri = ContentUris.withAppendedId(base_uri, p_id)
-                            input_stream = content_resolver.openInputStream(photo_uri)
-
-                            if input_stream:
-                                from jnius import autoclass
-                                BufferedInputStream = autoclass('java.io.BufferedInputStream')
-                                ByteArrayOutputStream = autoclass('java.io.ByteArrayOutputStream')
-
-                                buffered_stream = BufferedInputStream(input_stream)
-                                byte_array_stream = ByteArrayOutputStream()
-                                buffer = [0] * 8192
-                                while True:
-                                    read = buffered_stream.read(buffer)
-                                    if read == -1:
-                                        break
-                                    byte_array_stream.write(buffer, 0, read)
-
-                                photo_bytes = byte_array_stream.toByteArray()
-                                buffered_stream.close()
-                                input_stream.close()
-                                byte_array_stream.close()
-
-                                if len(photo_bytes) > 1000:  # 至少1KB才是有效照片
-                                    # 保存到APP私有目录
-                                    photo_dir = os.path.join(BASE_DIR, 'photos')
-                                    if not os.path.exists(photo_dir):
-                                        os.makedirs(photo_dir)
-                                    self.photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
-
-                                    with open(self.photo_path, 'wb') as f:
-                                        f.write(photo_bytes)
-
-                                    print(f'成功复制照片: {self.photo_path}, 大小: {len(photo_bytes)} 字节')
-
-                                    # 进入裁剪界面
-                                    crop_screen = self.manager.get_screen('crop')
-                                    crop_screen.set_image(self.photo_path)
-                                    self.manager.current = 'crop'
-                                    return
-                        except Exception as e:
-                            print(f'  复制照片ID={p_id}失败: {e}')
-                            continue
-                else:
-                    if cursor:
-                        cursor.close()
-                    print('MediaStore查询结果为空')
-
-            except Exception as e:
-                print(f'MediaStore查询失败: {e}')
-                traceback.print_exc()
-
-            # 回退到文件系统扫描
-            print('回退到文件系统扫描...')
-            scan_dirs = [
-                '/sdcard/DCIM/Camera',
-                '/sdcard/DCIM',
-                '/storage/emulated/0/DCIM/Camera',
-                '/storage/emulated/0/DCIM',
-            ]
-
-            latest_file = None
-            latest_time = 0
-
-            for scan_dir in scan_dirs:
-                try:
-                    if os.path.exists(scan_dir):
-                        files = os.listdir(scan_dir)
-                        print(f'  目录 {scan_dir} 有 {len(files)} 个文件')
-                        for filename in files:
-                            if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-                                filepath = os.path.join(scan_dir, filename)
-                                try:
-                                    mtime = os.path.getmtime(filepath)
-                                    if mtime > latest_time:
-                                        latest_time = mtime
-                                        latest_file = filepath
-                                except:
-                                    pass
-                        if latest_file:
-                            break
-                except Exception as e:
-                    print(f'  扫描目录{scan_dir}失败: {e}')
-                    continue
-
-            if latest_file and os.path.exists(latest_file):
-                print(f'文件系统找到: {latest_file}')
-                import shutil
-                photo_dir = os.path.join(BASE_DIR, 'photos')
-                if not os.path.exists(photo_dir):
-                    os.makedirs(photo_dir)
-                self.photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
-                try:
-                    shutil.copy2(latest_file, self.photo_path)
-                    if os.path.getsize(self.photo_path) > 1000:
-                        crop_screen = self.manager.get_screen('crop')
-                        crop_screen.set_image(self.photo_path)
-                        self.manager.current = 'crop'
-                        return
-                except Exception as e:
-                    print(f'复制文件失败: {e}')
-
-            # 方法2：如果指定路径没有，通过MediaStore查询
-            print('指定路径无照片，尝试MediaStore查询...')
-            try:
-                from jnius import autoclass
-
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                Uri = autoclass('android.net.Uri')
-                ContentUris = autoclass('android.content.ContentUris')
-
-                base_uri = Uri.parse("content://media/external/images/media")
-                content_resolver = PythonActivity.mActivity.getContentResolver()
-
-                # 查询最新照片
-                cursor = content_resolver.query(base_uri, ["_id", "_data", "date_added"], None, None, "date_added DESC LIMIT 1")
-
-                if cursor and cursor.moveToFirst():
-                    photo_id = cursor.getLong(0)
-                    photo_data = cursor.getString(1)
-                    photo_date = cursor.getLong(2)
-                    cursor.close()
-
-                    print(f'MediaStore最新照片: ID={photo_id}, path={photo_data}, date={photo_date}')
-
-                    # 构建Uri并通过ContentResolver复制
-                    photo_uri = ContentUris.withAppendedId(base_uri, photo_id)
-                    input_stream = content_resolver.openInputStream(photo_uri)
-
-                    if input_stream:
-                        from jnius import autoclass
-                        BufferedInputStream = autoclass('java.io.BufferedInputStream')
-                        ByteArrayOutputStream = autoclass('java.io.ByteArrayOutputStream')
-
-                        buffered_stream = BufferedInputStream(input_stream)
-                        byte_array_stream = ByteArrayOutputStream()
-                        buffer = [0] * 8192
-                        while True:
-                            read = buffered_stream.read(buffer)
-                            if read == -1:
-                                break
-                            byte_array_stream.write(buffer, 0, read)
-
-                        photo_bytes = byte_array_stream.toByteArray()
-                        buffered_stream.close()
-                        input_stream.close()
-                        byte_array_stream.close()
-
-                        # 保存到APP私有目录
+                        byte_array_stream.write(buffer, 0, read)
+                    photo_bytes = byte_array_stream.toByteArray()
+                    buffered_stream.close()
+                    input_stream.close()
+                    byte_array_stream.close()
+                    if len(photo_bytes) > 1000:
                         photo_dir = os.path.join(BASE_DIR, 'photos')
                         if not os.path.exists(photo_dir):
                             os.makedirs(photo_dir)
                         self.photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
-
                         with open(self.photo_path, 'wb') as f:
                             f.write(photo_bytes)
-
-                        print(f'已通过ContentResolver复制: {self.photo_path}, 大小: {len(photo_bytes)}')
-
                         crop_screen = self.manager.get_screen('crop')
                         crop_screen.set_image(self.photo_path)
                         self.manager.current = 'crop'
                         return
-            except Exception as e:
-                print(f'MediaStore查询失败: {e}')
-                traceback.print_exc()
-
-            # 方法3：回退到文件系统扫描
-            print('回退到文件系统扫描...')
-            scan_dirs = [
-                '/sdcard/DCIM/Camera',
-                '/sdcard/DCIM',
-                '/storage/emulated/0/DCIM/Camera',
-                '/storage/emulated/0/DCIM',
-            ]
-
-            latest_file = None
-            latest_time = 0
-
-            for scan_dir in scan_dirs:
-                try:
-                    if os.path.exists(scan_dir):
-                        for filename in os.listdir(scan_dir):
-                            if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-                                filepath = os.path.join(scan_dir, filename)
-                                try:
-                                    mtime = os.path.getmtime(filepath)
-                                    if mtime > latest_time:
-                                        latest_time = mtime
-                                        latest_file = filepath
-                                except:
-                                    pass
-                        if latest_file:
-                            break
-                except:
-                    continue
-
-            if latest_file and os.path.exists(latest_file):
-                print(f'文件系统找到: {latest_file}')
-                import shutil
-                photo_dir = os.path.join(BASE_DIR, 'photos')
-                if not os.path.exists(photo_dir):
-                    os.makedirs(photo_dir)
-                self.photo_path = os.path.join(photo_dir, f'photo_{int(time.time())}.jpg')
-                try:
-                    shutil.copy2(latest_file, self.photo_path)
-                    crop_screen = self.manager.get_screen('crop')
-                    crop_screen.set_image(self.photo_path)
-                    self.manager.current = 'crop'
-                    return
-                except:
-                    pass
-
-            # 没找到，继续等待（最多等60秒）
-            if not hasattr(self, '_check_count'):
-                self._check_count = 0
-            self._check_count += 1
-
-            if self._check_count < 30:
-                print(f'未找到照片，继续等待... (第{self._check_count}次)')
-                if hasattr(self, 'status_label'):
-                    self.status_label.text = f'正在查找照片... ({self._check_count}/30)'
-                Clock.schedule_once(self._check_captured_photo, 2)
-            else:
-                print('超时未找到照片')
-                self._check_count = 0
-                self._show_error('未找到拍摄的照片\n请使用相册选择图片')
-
         except Exception as e:
             print(f'检查照片失败: {e}')
-            traceback.print_exc()
-            self._show_error(f'获取照片失败: {str(e)[:60]}')
 
-
-
-    def _show_error(self, message):
-        """显示错误提示"""
-        try:
-            popup = Popup(title='提示', content=Label(text=message, font_name='ChineseFont'),
-                         size_hint=(0.8, 0.4))
-            popup.open()
-        except Exception as e:
-            print(f'显示错误失败: {e}')
+        if not hasattr(self, '_check_count'):
+            self._check_count = 0
+        self._check_count += 1
+        if self._check_count < 20:
+            Clock.schedule_once(self._check_captured_photo, 2)
+        else:
+            self._show_error('未找到拍摄的照片\n请使用相册选择图片')
 
     def _on_album(self, instance):
-        """从相册选择图片"""
-        try:
-            popup = FileChooserPopup(on_select=self._on_album_select)
-            popup.title = '选择图片'
-            popup.open()
-        except Exception as e:
-            print(f'相册选择失败: {e}')
-            self._show_error(f'打开相册失败: {str(e)[:60]}')
+        """从相册选择"""
+        self._show_error('相册功能开发中\n请使用拍照功能')
 
-    def _on_album_select(self, file_path):
-        if file_path.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
-            crop_screen = self.manager.get_screen('crop')
-            crop_screen.set_image(file_path)
-            self.manager.current = 'crop'
+    def _on_close(self, instance=None):
+        """返回主界面"""
+        self._checking = False
+        if self._webview:
+            try:
+                from android.runnable import run_on_ui_thread
+                @run_on_ui_thread
+                def destroy():
+                    self._webview.destroy()
+                destroy()
+            except:
+                pass
+            self._webview = None
+        self.manager.current = 'main'
+
+    def _show_error(self, message):
+        """显示错误"""
+        self.status_label.text = message
 
 class CropScreen(Screen):
     def __init__(self, **kwargs):
