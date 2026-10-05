@@ -494,14 +494,16 @@ class CameraScreen(Screen):
         """创建Android WebView并加载相机页面"""
         try:
             from jnius import autoclass
-            from android.runnable import run_on_ui_thread
+            print('步骤1: 导入jnius成功')
 
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             activity = PythonActivity.mActivity
+            print(f'步骤2: 获取Activity成功: {activity}')
 
             # 创建WebView
             WebView = autoclass('android.webkit.WebView')
             self._webview = WebView(activity)
+            print('步骤3: WebView创建成功')
 
             # 配置WebView设置
             settings = self._webview.getSettings()
@@ -510,43 +512,37 @@ class CameraScreen(Screen):
             settings.setAllowFileAccess(True)
             settings.setAllowContentAccess(True)
             settings.setMediaPlaybackRequiresUserGesture(False)
-            settings.setUserAgentString('Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36')
+            print('步骤4: WebView设置配置成功')
 
             # 设置WebViewClient
             WebViewClient = autoclass('android.webkit.WebViewClient')
             self._webview.setWebViewClient(WebViewClient())
+            print('步骤5: WebViewClient设置成功')
 
-            # 添加WebView到Activity
-            @run_on_ui_thread
-            def add_view():
-                LayoutParams = autoclass('android.view.ViewGroup$LayoutParams')
-                params = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
-                # 获取内容区域
-                content_view = activity.findViewById(16908290)  # android.R.id.content
-                if content_view:
-                    content_view.addView(self._webview, params)
-                else:
-                    activity.addContentView(self._webview, params)
-                print('WebView已添加到Activity')
-
-            add_view()
+            # 添加WebView到Activity（直接添加，不使用run_on_ui_thread）
+            LayoutParams = autoclass('android.view.ViewGroup$LayoutParams')
+            params = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+            activity.addContentView(self._webview, params)
+            print('步骤6: WebView已添加到Activity')
 
             # 加载相机HTML页面
             html_content = self._get_camera_html()
-            self._webview.loadDataWithBaseURL('file:///android_asset/', html_content, 'text/html', 'UTF-8', None)
-            print('WebView加载相机页面成功')
+            self._webview.loadDataWithBaseURL(None, html_content, 'text/html', 'UTF-8', None)
+            print('步骤7: WebView加载相机页面成功')
 
             self.status_label.text = '相机已启动，请对准题目后点击拍照'
 
             # 开始检查是否有拍照数据
             self._checking = True
             Clock.schedule_interval(self._check_photo_data, 1)
+            print('步骤8: 开始检查拍照数据')
 
         except Exception as e:
             print(f'创建WebView失败: {e}')
             traceback.print_exc()
-            self.status_label.text = 'WebView创建失败，使用系统相机'
-            Clock.schedule_once(self._on_capture, 1)
+            self.status_label.text = 'WebView失败: ' + str(e)[:40]
+            # 不回退到系统相机，因为系统相机也失败了
+            # 显示详细错误信息
 
     def _get_camera_html(self):
         """返回HTML相机页面"""
