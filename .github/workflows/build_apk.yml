@@ -131,9 +131,9 @@ jobs:
         with:
           path: |
             ~/.buildozer
-          key: buildozer-v7-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-v8-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-v6-${{ runner.os }}-
+            buildozer-v7-${{ runner.os }}-
 
       - name: Clean old build files
         run: |
