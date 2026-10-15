@@ -730,12 +730,38 @@ class ResultScreen(Screen):
         self.result_label.text = '正在识别图片中的文字...'
         def process_thread():
             try:
-                if not self.ocr_engine:
-                    from ocr_engine_python import get_ocr_engine
-                    self.ocr_engine = get_ocr_engine()
-                text = self.ocr_engine.recognize(image_path)
-                question_text = self.ocr_engine.extract_question_text(text)
-                Clock.schedule_once(lambda dt: self._on_ocr_complete(question_text), 0)
+                # 优先尝试PaddleOCR
+                ocr_text = ""
+                engine_name = ""
+                
+                try:
+                    from ocr_engine_paddle import get_ocr_engine as get_paddle_engine
+                    paddle_engine = get_paddle_engine()
+                    if paddle_engine.is_available:
+                        print(f"使用PaddleOCR引擎")
+                        result = paddle_engine.recognize(image_path)
+                        if result['success']:
+                            ocr_text = result['text']
+                            engine_name = "PaddleOCR-Lite"
+                        else:
+                            print(f"PaddleOCR识别失败: {result.get('error', '')}")
+                except Exception as e:
+                    print(f"PaddleOCR引擎不可用: {e}")
+                
+                # 如果PaddleOCR失败，使用纯Python OCR
+                if not ocr_text.strip():
+                    try:
+                        from ocr_engine_python import get_ocr_engine as get_python_engine
+                        python_engine = get_python_engine()
+                        print(f"使用纯Python OCR引擎")
+                        text = python_engine.recognize(image_path)
+                        question_text = python_engine.extract_question_text(text)
+                        ocr_text = question_text
+                        engine_name = "纯Python OCR"
+                    except Exception as e:
+                        print(f"纯Python OCR也失败: {e}")
+                
+                Clock.schedule_once(lambda dt: self._on_ocr_complete(ocr_text, engine_name), 0)
             except Exception as e:
                 error_msg = f'识别失败: {e}'
                 Clock.schedule_once(lambda dt: self._on_ocr_error(error_msg), 0)
@@ -743,14 +769,16 @@ class ResultScreen(Screen):
                 traceback.print_exc()
         threading.Thread(target=process_thread, daemon=True).start()
 
-    def _on_ocr_complete(self, question_text):
-        self.status_label.text = '识别完成，请核对题目文字'
-        if question_text:
+    def _on_ocr_complete(self, question_text, engine_name=""):
+        self.status_label.text = f'识别完成（{engine_name}），请核对题目文字'
+        if question_text and question_text.strip():
             self.question_input.text = question_text
+            self.result_label.text = f'✅ 识别完成，使用引擎：{engine_name}\n\n请核对识别结果，然后点击"搜索答案"'
         else:
             self.question_input.text = ''
             self.result_label.text = (
-                '⚠️ 纯Python OCR识别能力有限\n\n'
+                f'⚠️ OCR识别结果为空\n\n'
+                f'使用引擎：{engine_name}\n\n'
                 '请手动输入题目文字，然后点击"搜索答案"\n\n'
                 '提示：\n'
                 '1. 确保裁剪区域包含完整题目\n'
